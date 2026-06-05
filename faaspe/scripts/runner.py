@@ -11,12 +11,12 @@ def update_build(addr_list, f_name):
                 c.run('git pull && make')
             if idx == 0:    # client node only
                 with c.cd('~/projects/faaspe'):
-                    c.run(f'git pull && ./platform/cli.py create {f_name}')
+                    c.run(f'git pull && python3 ./platform/cli.py create {f_name}')
 
 def clear(remote_ip, f_name):
     with Connection(remote_ip) as c:
         with c.cd('~/projects/faaspe'):
-            c.run(f'./platform/cli.py delete {f_name}')
+            c.run(f'python3 ./platform/cli.py delete {f_name}')
 
 def run_kvs(kvs_addr, home, stop_event, use_occ=False):
     with Connection(kvs_addr) as c:
@@ -75,7 +75,7 @@ def run_client(client_addr, stop_event, f_name, num_operations, strategy, **kwar
         j_str = generate_json(f_name, num_operations, strategy, **kwargs)
         with c.cd('~/projects/faaspe'):
             try:
-                cmd = f'./platform/cli.py invoke {f_name} --params \'{j_str}\''
+                cmd = f'python3 ./platform/cli.py invoke {f_name} --params \'{j_str}\''
                 print(cmd)
                 c.run(cmd)
             except Exception as e:

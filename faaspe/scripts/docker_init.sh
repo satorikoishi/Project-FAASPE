@@ -1,5 +1,5 @@
 sudo apt-get install -y python3-pip
-pip3 install docker flask
+sudo apt-get install -y python3-flask python3-docker python3-click python3-requests
 
 sudo apt-get update
 sudo apt-get install ca-certificates curl
