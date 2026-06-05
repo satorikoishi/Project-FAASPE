@@ -12,9 +12,13 @@ strategy_list = ('local', 'remote', 'kayak', 'asfp')
 WORKING_DIR = os.path.dirname(os.getcwd())
 
 def read_token():
+    env_token = os.getenv('GITHUB_TOKEN')
+    if env_token:
+        return env_token.strip()
+    if not os.path.exists('token'):
+        return ''
     with open('token', 'r') as f:
-        token = f.readline()
-    return token
+        return f.readline().strip()
 
 class Node(object):
     def __init__(self, id, username, port, host):
