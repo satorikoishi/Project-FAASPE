@@ -1,0 +1,1 @@
+pip3 install protobuf==5.28.1

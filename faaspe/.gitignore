@@ -1,0 +1,7 @@
+openfaas-archive
+__pycache__
+token
+nodes.txt
+config.ini
+temp.csv
+temp_detailed.csv

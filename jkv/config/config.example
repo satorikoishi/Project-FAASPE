@@ -1,0 +1,17 @@
+base_port = 50050
+kvs: {
+    ip = "10.0.16.45"
+    recv_port = 1
+    send_port = 2
+}
+cache_kvs: {
+    ip = "10.0.16.45"
+}
+cache_client: {
+    ip = "10.0.16.45"
+    recv_port = 3
+    send_port = 4
+}
+client: {
+    ip = "10.0.16.45"
+}

@@ -1,0 +1,6 @@
+build
+.vscode
+__pycache__
+jkv_pb2.py
+combined_code.txt
+config.ini
