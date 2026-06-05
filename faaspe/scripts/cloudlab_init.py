@@ -16,7 +16,7 @@ def get_repo_url():
     token = read_token()
     if token:
         return f'https://{token}@{PROJECT_REPO}'
-    return f'git@{PROJECT_REPO}'
+    return f'https://{PROJECT_REPO}'
 
 def batch_init():
     conns = get_host_connections()
