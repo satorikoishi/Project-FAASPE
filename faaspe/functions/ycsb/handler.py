@@ -88,7 +88,7 @@ def main():
     push_addr = os.getenv('PUSH_ADDR')
     pull_addr = os.getenv('PULL_ADDR')
     # name = os.getenv('BENCH_NAME')
-    name = os.getenv('BENCH_TYPE')
+    name = os.getenv('BENCH_TYPE', 'A')
     num_op = int(os.getenv('NUM_OPERATION'))
     strategy = os.getenv('STRATEGY')
     

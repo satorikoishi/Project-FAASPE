@@ -49,7 +49,7 @@ class Benchmark:
         
         self.results['total_time']=total_time
         self.print_stats(total_time, latencies)
-        if 'trace' in self.name:
+        if self.name and 'trace' in self.name:
             bench_util.save_detailed_latency(latencies, f"./results/temp_detailed.csv")
 
     # Helper function to print stats
