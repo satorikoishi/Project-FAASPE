@@ -29,14 +29,14 @@ def batch_init():
                 f'ln -sfn {PROJECT_DIR}/faaspe ~/projects/faaspe',
                 f'ln -sfn {PROJECT_DIR}/jkv ~/projects/jkv',
                 'if [ -d ~/grpc/.git ]; then cd ~/grpc && git pull; else git clone --recurse-submodules -b v1.68.0 --depth 1 --shallow-submodules https://github.com/grpc/grpc ~/grpc; fi',
-                'cd ~/projects/faaspe && ./scripts/init.sh']
+                'cd ~/projects/faaspe && bash ./scripts/init.sh']
     for cmd in init_cmd:
         g_host.run(cmd)
     print("Batch init finished")
     
     print("Master init start")
     master_conn = conns[0]
-    master_conn.run(f'cd ~/projects/faaspe && ./scripts/docker_init.sh')
+    master_conn.run(f'cd ~/projects/faaspe && bash ./scripts/docker_init.sh')
     print("Master init finished")
 
 def batch_clean():
