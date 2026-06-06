@@ -141,6 +141,28 @@ class Arbiter:
         storage_latency = self.storage_func_us + float(params.get("storage_load_us", 0) or 0)
         return "native" if local_latency <= storage_latency else "func"
 
+    def access_depth(self, function_name, params=None):
+        profile = self.profiles.get(function_name)
+        if profile is None:
+            return None
+        try:
+            return RPNExpression(profile.get("rpn", "")).evaluate(params or {})
+        except RPNError:
+            return None
+
+    def estimate_latency_us(self, function_name, params=None, placement=None):
+        params = params or {}
+        placement = placement or self._decide(function_name, params)
+
+        if placement == "native":
+            access_depth = self.access_depth(function_name, params)
+            if access_depth is None:
+                return None
+            return self.local_base_us + access_depth * self.local_access_us
+        if placement == "func":
+            return self.storage_func_us + float(params.get("storage_load_us", 0) or 0)
+        return None
+
 
 _ARBITER = None
 

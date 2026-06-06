@@ -4,6 +4,7 @@ import os
 import csv
 import random
 from arbiter import get_arbiter
+from profiler import get_profiler
 
 def print_latency_stats(results, latencies, operation_type=""):
     """Prints various latency statistics for a given list of latencies."""
@@ -91,10 +92,27 @@ def strategy_placement(s, function_name=None, params=None):
         else:
             return 'func'
     elif s == 'faaspe':
-        return get_arbiter().decide(function_name, params)
+        return get_profiler().choose(function_name, params, get_arbiter()).placement
     else:
         raise ValueError('Unknown Strategy')
 
 def arbiter_overhead_us():
     return get_arbiter().last_overhead_us
+
+def profiler_overhead_us():
+    return get_profiler().last_overhead_us
+
+def record_profile(strategy, function_name, placement, latency_us):
+    if strategy == 'faaspe':
+        get_profiler().record(function_name, placement, latency_us)
+
+def profiler_snapshot(strategy, function_name):
+    if strategy == 'faaspe':
+        return get_profiler().snapshot(function_name)
+    return {
+        "profiler_fallback_count": 0,
+        "profiler_fallback_invocations": 0,
+        "profiler_recheck_count": 0,
+        "profiler_override": "",
+    }
         

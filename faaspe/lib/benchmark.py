@@ -16,6 +16,7 @@ class Benchmark:
         self.results = {'name': name, 'num_op': num_operations, 'strategy': strategy, 'access': access}
         self.placement_counts = {'native': 0, 'func': 0, 'pushback': 0}
         self.arbiter_overheads = []
+        self.profiler_overheads = []
         self.init_kvs()
         if access == 'cold':
             self.client.clear()
@@ -40,6 +41,7 @@ class Benchmark:
                 self.placement_counts[placement] += 1
             if self.strategy == 'faaspe':
                 self.arbiter_overheads.append(bench_util.arbiter_overhead_us())
+                self.profiler_overheads.append(bench_util.profiler_overhead_us())
             
             op_start_time = time.time()
             res = self.perform(op_input, placement)  # Perform operation and capture latency
@@ -47,6 +49,7 @@ class Benchmark:
             
             latency = op_end_time - op_start_time
             latencies.append(latency)
+            bench_util.record_profile(self.strategy, self.name, placement, latency * 1e6)
             
             if res:
                 self.success += 1
@@ -63,6 +66,13 @@ class Benchmark:
         else:
             self.results['arbiter_mean_us'] = 0.0
             self.results['arbiter_max_us'] = 0.0
+        if self.profiler_overheads:
+            self.results['profiler_mean_us'] = sum(self.profiler_overheads) / len(self.profiler_overheads)
+            self.results['profiler_max_us'] = max(self.profiler_overheads)
+        else:
+            self.results['profiler_mean_us'] = 0.0
+            self.results['profiler_max_us'] = 0.0
+        self.results.update(bench_util.profiler_snapshot(self.strategy, self.name))
         self.print_stats(total_time, latencies)
         if self.name and 'trace' in self.name:
             bench_util.save_detailed_latency(latencies, f"./results/temp_detailed.csv")
