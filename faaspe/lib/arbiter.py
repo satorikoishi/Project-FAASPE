@@ -101,7 +101,10 @@ class Arbiter:
         self.profiles = profiles or DEFAULT_PROFILES
         self.local_base_us = float(os.getenv("FAASPE_LOCAL_BASE_US", local_base_us))
         self.local_access_us = float(os.getenv("FAASPE_LOCAL_ACCESS_US", local_access_us))
-        self.storage_func_us = float(os.getenv("FAASPE_STORAGE_FUNC_US", storage_func_us))
+        threshold_multiplier = float(os.getenv("FAASPE_THRESHOLD_MULTIPLIER", 1.0))
+        self.storage_func_us = (
+            float(os.getenv("FAASPE_STORAGE_FUNC_US", storage_func_us)) * threshold_multiplier
+        )
         self.object_size_threshold = int(
             os.getenv("FAASPE_OBJECT_SIZE_THRESHOLD", object_size_threshold)
         )

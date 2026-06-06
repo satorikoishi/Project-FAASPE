@@ -1,5 +1,6 @@
 import bench_util
 
+import os
 import time
 import logging
 import random
@@ -10,12 +11,14 @@ from invocation_log import get_invocation_logger
 # General Benchmarking Class to measure latency and throughput
 class Benchmark:
     def __init__(self, client, name, num_operations: int, strategy, access='hot'):
+        self.seed_random()
         self.num_operations = num_operations
         self.success = 0
         self.name = name
         self.client = client
         self.strategy = strategy
         self.results = {'name': name, 'num_op': num_operations, 'strategy': strategy, 'access': access}
+        self.result_dir = os.getenv("FAASPE_RESULT_DIR", "./results")
         self.placement_counts = {'native': 0, 'func': 0, 'pushback': 0}
         self.arbiter_overheads = []
         self.profiler_choose_overheads = []
@@ -84,14 +87,14 @@ class Benchmark:
         self.results.update(bench_util.profiler_snapshot(self.strategy, self.name))
         self.print_stats(total_time, latencies)
         if self.name and 'trace' in self.name:
-            bench_util.save_detailed_latency(latencies, f"./results/temp_detailed.csv")
+            bench_util.save_detailed_latency(latencies, os.path.join(self.result_dir, "temp_detailed.csv"))
 
     # Helper function to print stats
     def print_stats(self, total_time, latencies):
         bench_util.print_latency_stats(self.results, latencies, self.name)
         bench_util.print_tput(self.results, self.success / total_time, "success ")
         bench_util.print_tput(self.results, (self.num_operations - self.success) / total_time, "abort ")
-        bench_util.save_benchmark_to_csv(self.results, f"./results/temp.csv")
+        bench_util.save_benchmark_to_csv(self.results, os.path.join(self.result_dir, "temp.csv"))
         
     def perform(self, op_input, placement):
         """Perform a single workload operation and return the latency for it."""
@@ -152,6 +155,18 @@ class Benchmark:
             trigger_check_us=0.0,
             ast_analysis_us=0.0,
         )
+
+    def seed_random(self):
+        seed = os.getenv("FAASPE_RANDOM_SEED")
+        if seed is None:
+            return
+        seed = int(seed)
+        random.seed(seed)
+        try:
+            import numpy as np
+            np.random.seed(seed)
+        except ImportError:
+            pass
     
     def init_kvs(self):
         return None

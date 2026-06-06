@@ -61,8 +61,10 @@ class Profiler:
         explore_samples=10,
         recheck_interval=100,
         history_limit=200,
+        fallback_enabled=True,
     ):
         self.enabled = enabled
+        self.fallback_enabled = fallback_enabled
         self.violation_factor = violation_factor
         self.violation_window = violation_window
         self.violation_limit = violation_limit
@@ -83,6 +85,7 @@ class Profiler:
             explore_samples=int(os.getenv("FAASPE_PROFILER_EXPLORE_SAMPLES", 10)),
             recheck_interval=int(os.getenv("FAASPE_PROFILER_RECHECK_INTERVAL", 100)),
             history_limit=int(os.getenv("FAASPE_PROFILER_HISTORY_LIMIT", 200)),
+            fallback_enabled=os.getenv("FAASPE_FALLBACK_ENABLED", "1") != "0",
         )
 
     def choose(self, function_name, params, arbiter):
@@ -104,7 +107,7 @@ class Profiler:
         profile = self._profile(function_name)
         profile.invocations += 1
 
-        if profile.exploring:
+        if self.fallback_enabled and profile.exploring:
             placement = self._next_explore_placement(profile)
             expected = arbiter.estimate_latency_us(function_name, params, placement)
             plan = self._plan_from_decision(decision, expected or 0.0)
@@ -113,7 +116,7 @@ class Profiler:
             plan.reason = "explore"
             return plan
 
-        if profile.override_placement:
+        if self.fallback_enabled and profile.override_placement:
             placement = profile.override_placement
             reason = "fallback"
             if (
@@ -157,7 +160,7 @@ class Profiler:
         while len(profile.recent_violations) > self.violation_window:
             profile.recent_violations.popleft()
 
-        if sum(profile.recent_violations) >= self.violation_limit:
+        if self.fallback_enabled and sum(profile.recent_violations) >= self.violation_limit:
             self._start_explore(profile)
 
     def snapshot(self, function_name):
