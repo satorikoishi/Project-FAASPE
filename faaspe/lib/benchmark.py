@@ -14,6 +14,8 @@ class Benchmark:
         self.client = client
         self.strategy = strategy
         self.results = {'name': name, 'num_op': num_operations, 'strategy': strategy, 'access': access}
+        self.placement_counts = {'native': 0, 'func': 0, 'pushback': 0}
+        self.arbiter_overheads = []
         self.init_kvs()
         if access == 'cold':
             self.client.clear()
@@ -31,7 +33,13 @@ class Benchmark:
         for i in range(self.num_operations):
             # Prepare input for i-th op
             op_input = self.prepare_input(i)
-            placement = bench_util.strategy_placement(self.strategy)
+            placement = bench_util.strategy_placement(
+                self.strategy, self.name, self.arbiter_params(op_input)
+            )
+            if placement in self.placement_counts:
+                self.placement_counts[placement] += 1
+            if self.strategy == 'faaspe':
+                self.arbiter_overheads.append(bench_util.arbiter_overhead_us())
             
             op_start_time = time.time()
             res = self.perform(op_input, placement)  # Perform operation and capture latency
@@ -48,6 +56,13 @@ class Benchmark:
         total_time = end_time - start_time
         
         self.results['total_time']=total_time
+        self.results.update({f'{k}_count': v for k, v in self.placement_counts.items()})
+        if self.arbiter_overheads:
+            self.results['arbiter_mean_us'] = sum(self.arbiter_overheads) / len(self.arbiter_overheads)
+            self.results['arbiter_max_us'] = max(self.arbiter_overheads)
+        else:
+            self.results['arbiter_mean_us'] = 0.0
+            self.results['arbiter_max_us'] = 0.0
         self.print_stats(total_time, latencies)
         if self.name and 'trace' in self.name:
             bench_util.save_detailed_latency(latencies, f"./results/temp_detailed.csv")
@@ -66,6 +81,10 @@ class Benchmark:
     def prepare_input(self, idx):
         """Prepare input for idx-th operation."""
         return None
+
+    def arbiter_params(self, op_input):
+        """Return low-cost invocation parameters used to solve registered RPN."""
+        return {}
     
     def init_kvs(self):
         return None

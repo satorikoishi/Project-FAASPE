@@ -5,6 +5,11 @@ import docker
 from flask import Flask, request, jsonify
 import uuid
 import time
+import json
+import sys
+
+sys.path.append("./lib")
+from arbiter import DEFAULT_PROFILES, PROFILE_MANIFEST
 
 app = Flask(__name__)
 client = docker.from_env()  # Docker client
@@ -34,6 +39,14 @@ def try_destroy_function(function_name):
         print(f"Function {function_name} not found")
         return False
 
+def write_arbiter_profile(function_dir, function_name):
+    profile = DEFAULT_PROFILES.get(function_name)
+    if not profile:
+        return
+    manifest_path = os.path.join(function_dir, PROFILE_MANIFEST)
+    with open(manifest_path, "w") as f:
+        json.dump({function_name: profile}, f)
+
 @app.route("/functions", methods=["POST"])
 def create_function(): 
     """Create a new serverless function"""
@@ -45,10 +58,12 @@ def create_function():
     try_destroy_function(function_name)
     
     function_dir = os.path.join(FUNCTIONS_DIR, function_name)
-    function_name = FAASPE_PREFIX + function_name  # Rename it, differenciate from other images
 
     if not os.path.exists(function_dir):
         return f"Path {function_dir} not exist", 400
+    write_arbiter_profile(function_dir, function_name)
+
+    function_name = FAASPE_PREFIX + function_name  # Rename it, differenciate from other images
     
     #  # Check if a requirements.txt exists and prepare Dockerfile accordingly
     # requirements_txt = os.path.join(function_dir, "requirements.txt")

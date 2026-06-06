@@ -33,12 +33,13 @@ class ListTraversalTrace(Benchmark):
         else:
             depth = 8
         return '0', depth
+
+    def arbiter_params(self, op_input):
+        _, depth = op_input
+        return {'depth': depth}
     
     def perform(self, op_input, placement):
         key, depth = op_input
-        
-        if placement == 'faaspe':
-            placement = 'native' if depth <= 4 else 'func'
         
         if placement == 'native':
             for _ in range(depth):

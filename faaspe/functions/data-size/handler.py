@@ -34,6 +34,9 @@ class DataSize(Benchmark):
         else:
             assert False
         return (op, str(i))
+
+    def arbiter_params(self, op_input):
+        return {'object_size': len(VALUE)}
     
     def perform(self, op_input, placement):
         op, key = op_input

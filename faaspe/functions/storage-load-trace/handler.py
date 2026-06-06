@@ -29,14 +29,16 @@ class StorageLoadTrace(Benchmark):
             flag = True
             
         return '0', depth, flag
+
+    def arbiter_params(self, op_input):
+        _, depth, storage_loaded = op_input
+        return {
+            'depth': depth,
+            'storage_load_us': 2000 if storage_loaded else 0,
+        }
     
     def perform(self, op_input, placement):
         key, depth, flag = op_input
-        
-        if placement == 'faaspe':
-            placement = 'func'
-            if flag:
-                placement = 'native'
         
         if placement == 'native':
             for _ in range(depth):

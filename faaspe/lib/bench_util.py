@@ -3,6 +3,7 @@ import logging
 import os
 import csv
 import random
+from arbiter import get_arbiter
 
 def print_latency_stats(results, latencies, operation_type=""):
     """Prints various latency statistics for a given list of latencies."""
@@ -72,9 +73,9 @@ def save_detailed_latency(latencies, output_filename):
         csv_writer = csv.writer(file)
         csv_writer.writerow(latencies)
 
-# Strategy: local, remote, kayak, asfp
+# Strategy: local, remote, kayak, asfp, faaspe
 # Placement: native, func, pushback(func + native)
-def strategy_placement(s):
+def strategy_placement(s, function_name=None, params=None):
     if s == 'local':
         return 'native'
     elif s == 'remote':
@@ -90,7 +91,10 @@ def strategy_placement(s):
         else:
             return 'func'
     elif s == 'faaspe':
-        return 'faaspe'
+        return get_arbiter().decide(function_name, params)
     else:
         raise ValueError('Unknown Strategy')
+
+def arbiter_overhead_us():
+    return get_arbiter().last_overhead_us
         

@@ -26,6 +26,9 @@ class ListTraversal(Benchmark):
     
     def prepare_input(self, i):
         return str(random.randint(0, 999))
+
+    def arbiter_params(self, op_input):
+        return {'depth': self.depth}
     
     def perform(self, op_input, placement):
         key = op_input

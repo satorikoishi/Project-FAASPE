@@ -29,6 +29,9 @@ class ComputeEmulate(Benchmark):
     
     def prepare_input(self, i):
         return None
+
+    def arbiter_params(self, op_input):
+        return {'dependent_access': self.dependent_access}
     
     def emulate_exec(self):
         # precised sleep
