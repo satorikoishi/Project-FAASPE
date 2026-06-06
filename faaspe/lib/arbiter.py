@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from dataclasses import dataclass
 
 
 DEFAULT_PROFILES = {
@@ -16,6 +17,18 @@ DEFAULT_PROFILES = {
 }
 
 PROFILE_MANIFEST = "faaspe_rpn.json"
+
+
+@dataclass
+class PlacementDecision:
+    placement: str
+    reason: str
+    access_depth: float = None
+    object_size: int = None
+    compute_latency_us: float = None
+    storage_latency_us: float = None
+    ast_analysis_us: float = 0.0
+    trigger_check_us: float = 0.0
 
 
 class RPNError(ValueError):
@@ -118,28 +131,64 @@ class Arbiter:
     def decide(self, function_name, params=None):
         started = time.perf_counter()
         try:
-            placement = self._decide(function_name, params or {})
+            placement = self._explain(function_name, params or {}).placement
         finally:
             self.last_overhead_us = (time.perf_counter() - started) * 1e6
         return placement
 
     def _decide(self, function_name, params):
+        return self.explain(function_name, params).placement
+
+    def explain(self, function_name, params=None):
+        started = time.perf_counter()
+        try:
+            return self._explain(function_name, params or {})
+        finally:
+            self.last_overhead_us = (time.perf_counter() - started) * 1e6
+
+    def _explain(self, function_name, params=None):
+        params = params or {}
         profile = self.profiles.get(function_name)
         if profile is None:
-            return self.unknown_default
+            return PlacementDecision(
+                self.unknown_default,
+                "unsupported_static_analysis",
+                object_size=self._object_size(params),
+            )
 
-        object_size = int(float(params.get("object_size", 0) or 0))
+        object_size = self._object_size(params)
         if object_size >= self.object_size_threshold:
-            return "func"
+            return PlacementDecision(
+                "func",
+                "large_object_trigger",
+                object_size=object_size,
+                storage_latency_us=self.storage_func_us
+                + float(params.get("storage_load_us", 0) or 0),
+            )
 
         try:
             access_depth = RPNExpression(profile.get("rpn", "")).evaluate(params)
         except RPNError:
-            return self.unknown_default
+            return PlacementDecision(
+                self.unknown_default,
+                "unsupported_static_analysis",
+                object_size=object_size,
+            )
 
         local_latency = self.local_base_us + access_depth * self.local_access_us
         storage_latency = self.storage_func_us + float(params.get("storage_load_us", 0) or 0)
-        return "native" if local_latency <= storage_latency else "func"
+        if float(params.get("storage_load_us", 0) or 0) > 0 and local_latency <= storage_latency:
+            reason = "storage_load"
+        else:
+            reason = "access_depth_threshold"
+        return PlacementDecision(
+            "native" if local_latency <= storage_latency else "func",
+            reason,
+            access_depth=access_depth,
+            object_size=object_size,
+            compute_latency_us=local_latency,
+            storage_latency_us=storage_latency,
+        )
 
     def access_depth(self, function_name, params=None):
         profile = self.profiles.get(function_name)
@@ -162,6 +211,9 @@ class Arbiter:
         if placement == "func":
             return self.storage_func_us + float(params.get("storage_load_us", 0) or 0)
         return None
+
+    def _object_size(self, params):
+        return int(float(params.get("object_size", 0) or 0))
 
 
 _ARBITER = None

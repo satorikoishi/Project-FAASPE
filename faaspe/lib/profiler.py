@@ -18,6 +18,13 @@ class InvocationPlan:
     expected_us: float = 0.0
     fallback_active: bool = False
     reason: str = "normal"
+    arbiter_reason: str = "default"
+    access_depth: float = None
+    object_size: int = None
+    compute_latency_us: float = None
+    storage_latency_us: float = None
+    ast_analysis_us: float = 0.0
+    trigger_check_us: float = 0.0
 
 
 @dataclass
@@ -88,10 +95,11 @@ class Profiler:
         return plan
 
     def _choose(self, function_name, params, arbiter):
-        base_placement = arbiter.decide(function_name, params)
+        decision = arbiter.explain(function_name, params)
+        base_placement = decision.placement
         expected = arbiter.estimate_latency_us(function_name, params, base_placement)
         if not self.enabled or base_placement not in PLACEMENTS:
-            return InvocationPlan(base_placement, expected or 0.0)
+            return self._plan_from_decision(decision, expected or 0.0)
 
         profile = self._profile(function_name)
         profile.invocations += 1
@@ -99,7 +107,11 @@ class Profiler:
         if profile.exploring:
             placement = self._next_explore_placement(profile)
             expected = arbiter.estimate_latency_us(function_name, params, placement)
-            return InvocationPlan(placement, expected or 0.0, True, "explore")
+            plan = self._plan_from_decision(decision, expected or 0.0)
+            plan.placement = placement
+            plan.fallback_active = True
+            plan.reason = "explore"
+            return plan
 
         if profile.override_placement:
             placement = profile.override_placement
@@ -112,9 +124,13 @@ class Profiler:
                 reason = "recheck"
                 profile.recheck_count += 1
             expected = arbiter.estimate_latency_us(function_name, params, placement)
-            return InvocationPlan(placement, expected or 0.0, True, reason)
+            plan = self._plan_from_decision(decision, expected or 0.0)
+            plan.placement = placement
+            plan.fallback_active = True
+            plan.reason = reason
+            return plan
 
-        return InvocationPlan(base_placement, expected or 0.0)
+        return self._plan_from_decision(decision, expected or 0.0)
 
     def record(self, function_name, placement, latency_us, plan=None):
         if not self.enabled or placement not in PLACEMENTS:
@@ -206,6 +222,20 @@ class Profiler:
 
     def _append_history(self, history, latency_us):
         history.append(latency_us)
+
+    def _plan_from_decision(self, decision, expected_us):
+        return InvocationPlan(
+            placement=decision.placement,
+            expected_us=expected_us,
+            reason="normal",
+            arbiter_reason=decision.reason,
+            access_depth=decision.access_depth,
+            object_size=decision.object_size,
+            compute_latency_us=decision.compute_latency_us,
+            storage_latency_us=decision.storage_latency_us,
+            ast_analysis_us=decision.ast_analysis_us,
+            trigger_check_us=decision.trigger_check_us,
+        )
 
 
 _PROFILER = None

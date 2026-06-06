@@ -3,8 +3,12 @@ import logging
 import os
 import csv
 import random
+import time
 from arbiter import get_arbiter
 from profiler import get_profiler
+
+
+_LAST_PROFILER_UPDATE_US = 0.0
 
 def print_latency_stats(results, latencies, operation_type=""):
     """Prints various latency statistics for a given list of latencies."""
@@ -103,8 +107,16 @@ def profiler_overhead_us():
     return get_profiler().last_overhead_us
 
 def record_profile(strategy, function_name, placement, latency_us):
+    global _LAST_PROFILER_UPDATE_US
     if strategy == 'faaspe':
+        started = time.perf_counter()
         get_profiler().record(function_name, placement, latency_us)
+        _LAST_PROFILER_UPDATE_US = (time.perf_counter() - started) * 1e6
+    else:
+        _LAST_PROFILER_UPDATE_US = 0.0
+
+def profiler_update_overhead_us():
+    return _LAST_PROFILER_UPDATE_US
 
 def profiler_snapshot(strategy, function_name):
     if strategy == 'faaspe':
@@ -115,4 +127,7 @@ def profiler_snapshot(strategy, function_name):
         "profiler_recheck_count": 0,
         "profiler_override": "",
     }
+
+def profiler_last_plan():
+    return get_profiler().last_plan()
         
