@@ -1,7 +1,7 @@
 base_port = 50050
 # FUNC isolation mode:
 #   none / l0        : trusted inline execution, performance lower bound.
-#   lightweight / l1 : default; warm tenant/function runner path.
+#   lightweight / l1 : warm tenant/function runner path.
 #   strong / l2      : fresh runner path per invocation.
 # L1 starts a warm external worker process by default for low overhead:
 #   JKV_L1_WORKER_CMD="./build/jkv_func_worker"
@@ -11,7 +11,7 @@ base_port = 50050
 #   JKV_L1_WORKER_CMD="./scripts/run_func_worker_container.sh" ./build/jkv_server
 # The container wrapper uses cgroups CPU/memory/pids limits, no network,
 # no new privileges, read-only rootfs, and dropped Linux capabilities.
-isolation_mode = "lightweight"
+isolation_mode = "none"
 func_timeout_ms = 1000
 kvs: {
     ip = "10.0.16.45"

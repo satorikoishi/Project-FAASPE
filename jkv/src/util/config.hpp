@@ -29,7 +29,7 @@ public:
         if (env_mode) {
             return env_mode;
         }
-        return read_optional_str("isolation_mode", "lightweight");
+        return read_optional_str("isolation_mode", "none");
     }
 
     static inline int get_func_timeout_ms() {

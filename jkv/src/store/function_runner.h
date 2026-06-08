@@ -16,7 +16,7 @@ class FunctionRunner {
 public:
     // Isolation taxonomy used by the FaaSPE revision experiments:
     //   L0 / none        : trusted inline execution in the current runtime.
-    //   L1 / lightweight : default mode. The production target is a warm
+    //   L1 / lightweight : optional sandbox mode. The production target is a warm
     //                      process/container pool per tenant/function with
     //                      timeout, resource limits, seccomp, and dropped caps.
     //                      This prototype keeps the same interface and uses a
