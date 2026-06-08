@@ -1,5 +1,7 @@
 #pragma once
 #include <libconfig.h++>
+#include <cstdlib>
+#include <iostream>
 #include "common.hpp"
 #include "fmt/core.h"
 
@@ -20,6 +22,22 @@ public:
 
     static inline std::string get_recv_addr_bind(const std::string& type) {
         return fmt::format("tcp://*:{}", get_recv_port(type));
+    }
+
+    static inline std::string get_isolation_mode() {
+        const char* env_mode = std::getenv("JKV_ISOLATION_MODE");
+        if (env_mode) {
+            return env_mode;
+        }
+        return read_optional_str("isolation_mode", "lightweight");
+    }
+
+    static inline int get_func_timeout_ms() {
+        const char* env_timeout = std::getenv("JKV_FUNC_TIMEOUT_MS");
+        if (env_timeout) {
+            return std::stoi(env_timeout);
+        }
+        return read_optional_int("func_timeout_ms", 1000);
     }
 
 private:
@@ -63,6 +81,34 @@ private:
         cfg.lookupValue(field_name, res);
         spdlog::info("Read field {}, got {}.", field_name, res);
         return res;
+    }
+
+    static inline std::string read_optional_str(const std::string& field_name, const std::string& default_value) {
+        libconfig::Config cfg;
+        try {
+            cfg.readFile("config/config.ini");
+        } catch(...) {
+            return default_value;
+        }
+        std::string res;
+        if (cfg.lookupValue(field_name, res)) {
+            return res;
+        }
+        return default_value;
+    }
+
+    static inline int read_optional_int(const std::string& field_name, int default_value) {
+        libconfig::Config cfg;
+        try {
+            cfg.readFile("config/config.ini");
+        } catch(...) {
+            return default_value;
+        }
+        int res;
+        if (cfg.lookupValue(field_name, res)) {
+            return res;
+        }
+        return default_value;
     }
 
     static inline std::string get_ip(const std::string& type) {

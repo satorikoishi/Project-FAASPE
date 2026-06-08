@@ -12,5 +12,10 @@ public:
     virtual bool put(const Key_t& key, const ValueWithVersion_t& value) = 0;  // Store a key-value pair (Update only during benchmark)
     virtual ValueWithVersion_t get(const Key_t& key, bool& found) const = 0;               // Retrieve a value by key
     virtual bool validate(const ValidationSet& read_set, const KVVSet& write_set, KVVMap_t& update_set) = 0;
-    virtual bool func(const std::string& func_name, const std::string& params) = 0;
+    virtual bool func(const std::string& func_name, const std::string& params, const std::string& client_id) = 0;
+    virtual bool func_update_key(const Key_t& key, const ValueWithVersion_t& value) {
+        bool found = false;
+        get(key, found);
+        return put(key, value);
+    }
 };

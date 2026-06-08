@@ -66,6 +66,7 @@ set(SERVER_SOURCE_FILES
     src/main.cpp
     src/store/kvstore.cpp
     src/store/occkvs.cpp
+    src/store/function_runner.cpp
     src/communication/zmq_server.cpp
 )
 

@@ -1,4 +1,10 @@
 #include "occkvs.h"
+#include "util/config.hpp"
+
+OCCKVStore::OCCKVStore()
+    : function_runner_(FunctionRunner::create(ConfUtil::get_isolation_mode(), ConfUtil::get_func_timeout_ms())) {
+    spdlog::info("OCCKVStore FUNC isolation_mode={} timeout_ms={}", ConfUtil::get_isolation_mode(), ConfUtil::get_func_timeout_ms());
+}
 
 bool OCCKVStore::put(const Key_t& key, const ValueWithVersion_t& value) {
     std::lock_guard<std::mutex> lock(store_mutex);
@@ -41,36 +47,17 @@ bool OCCKVStore::validate(const ValidationSet& read_set, const KVVSet& write_set
     return true;    // Success and commit
 }
 
-bool OCCKVStore::func(const std::string& func_name, const std::string& params) {
-    spdlog::debug("Received func: {} with param: {}", func_name, params);
-    if (func_name == "NONE") {
-        return true;
-    } else if (func_name == "GET") {
-        bool found = false;
-        get(params, found);
-        return found;
-    } else if (func_name == "PUT") {
-        std::istringstream ss(params);
-        Key_t key;
-        ValueWithVersion_t vv;
-        ss >> key >> vv.first >> vv.second;
-        return put(key, vv);
-    } else if (func_name == "UPDATE") {
-        std::istringstream ss(params);
-        Key_t key;
-        ValueWithVersion_t vv;
-        ss >> key >> vv.first >> vv.second;
-        bool found = false;
-        auto got_vv = get(key, found);
-        ValidationSet temp_validation_set;
-        temp_validation_set.insert(std::make_pair(key, get_version(got_vv)));
-        KVVSet temp_kvv_set;
-        temp_kvv_set.insert(std::make_pair(key, vv));
-        KVVMap_t temp_update_set;
-        return validate(temp_validation_set, temp_kvv_set, temp_update_set);
-    } else {
-        throw std::logic_error("Unknown FUNC");
-    }
-    return false;
+bool OCCKVStore::func(const std::string& func_name, const std::string& params, const std::string& client_id) {
+    return function_runner_->run(*this, func_name, params, client_id);
 }
 
+bool OCCKVStore::func_update_key(const Key_t& key, const ValueWithVersion_t& value) {
+    bool found = false;
+    auto got_vv = get(key, found);
+    ValidationSet temp_validation_set;
+    temp_validation_set.insert(std::make_pair(key, get_version(got_vv)));
+    KVVSet temp_kvv_set;
+    temp_kvv_set.insert(std::make_pair(key, value));
+    KVVMap_t temp_update_set;
+    return validate(temp_validation_set, temp_kvv_set, temp_update_set);
+}

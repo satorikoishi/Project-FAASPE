@@ -107,7 +107,7 @@ void ZMQServer::ProcessValidate(const Request& request) {
 }
 
 void ZMQServer::ProcessFunc(const Request& request) {
-    auto ret = store_.func(request.key(), request.payload().value());
+    auto ret = store_.func(request.key(), request.payload().value(), request.client_id());
 
     // Prepare the Response message
     Response func_response;

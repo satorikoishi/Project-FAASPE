@@ -1,4 +1,6 @@
 base_port = 50050
+isolation_mode = "lightweight"
+func_timeout_ms = 1000
 kvs: {
     ip = "10.0.16.45"
     recv_port = 1

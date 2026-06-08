@@ -1,4 +1,10 @@
 #include "kvstore.h"
+#include "util/config.hpp"
+
+LWWKVStore::LWWKVStore()
+    : function_runner_(FunctionRunner::create(ConfUtil::get_isolation_mode(), ConfUtil::get_func_timeout_ms())) {
+    spdlog::info("LWWKVStore FUNC isolation_mode={} timeout_ms={}", ConfUtil::get_isolation_mode(), ConfUtil::get_func_timeout_ms());
+}
 
 bool LWWKVStore::put(const Key_t& key, const ValueWithVersion_t& value) {
     std::lock_guard<std::mutex> lock(store_mutex);
@@ -43,40 +49,6 @@ bool LWWKVStore::validate(const ValidationSet& read_set, const KVVSet& write_set
     return false;
 }
 
-bool LWWKVStore::func(const std::string& func_name, const std::string& params) {
-    spdlog::debug("Received func: {} with param: {}", func_name, params);
-    if (func_name == "NONE") {
-        return true;
-    } else if (func_name == "GET") {
-        bool found = false;
-        get(params, found);
-        return found;
-    } else if (func_name == "PUT") {
-        std::istringstream ss(params);
-        Key_t key;
-        ValueWithVersion_t vv;
-        ss >> key >> vv.first >> vv.second;
-        return put(key, vv);
-    } else if (func_name == "UPDATE") {
-        std::istringstream ss(params);
-        Key_t key;
-        ValueWithVersion_t vv;
-        ss >> key >> vv.first >> vv.second;
-        bool found = false;
-        get(key, found);
-        return put(key, vv);
-    } else if (func_name == "EMULATE") {
-        // Get current time in seconds
-        auto start = std::chrono::steady_clock::now();
-        // Convert compute duration to microseconds
-        auto end_time = start + std::chrono::microseconds(std::stoll(params));
-        // Busy-wait loop until the computed time duration has passed
-        while (std::chrono::steady_clock::now() < end_time) {
-            // No-op: Just wait
-        }
-        return true;
-    } else {
-        throw std::logic_error("Unknown FUNC");
-    }
-    return false;
+bool LWWKVStore::func(const std::string& func_name, const std::string& params, const std::string& client_id) {
+    return function_runner_->run(*this, func_name, params, client_id);
 }
