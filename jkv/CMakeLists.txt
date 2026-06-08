@@ -79,6 +79,8 @@ add_executable(occ_server ${SERVER_SOURCE_FILES} ${COMMON_SOURCE_FILES} ${PROTO_
 target_link_libraries(occ_server jkv_lib_proto zmq ${Protobuf_LIBRARIES} spdlog fmt config++)
 target_compile_definitions(occ_server PRIVATE USE_OCC)
 
+add_executable(jkv_func_worker src/store/func_worker_main.cpp)
+
 # Add the source files
 set(ZMQ_PINGPONG_SOURCE_FILES
     src/client/zmq_pingpong.cpp

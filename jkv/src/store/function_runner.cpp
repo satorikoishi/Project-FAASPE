@@ -1,8 +1,17 @@
 #include "function_runner.h"
 
+#include <cerrno>
+#include <csignal>
 #include <chrono>
+#include <cstdlib>
+#include <cstring>
 #include <sstream>
 #include <stdexcept>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <utility>
+#include <vector>
 
 namespace {
 constexpr int DEFAULT_TIMEOUT_MS = 1000;
@@ -36,6 +45,38 @@ std::string normalize_mode(const std::string& mode) {
         return "strong";
     }
     return "lightweight";
+}
+
+std::string worker_command() {
+    const char* cmd = std::getenv("JKV_L1_WORKER_CMD");
+    if (cmd && std::strlen(cmd) > 0) {
+        return cmd;
+    }
+    return "./build/jkv_func_worker";
+}
+
+std::vector<std::string> split_tab(const std::string& line) {
+    std::vector<std::string> parts;
+    std::string current;
+    std::istringstream ss(line);
+    while (std::getline(ss, current, '\t')) {
+        parts.push_back(current);
+    }
+    return parts;
+}
+
+bool write_all(int fd, const std::string& data) {
+    const char* ptr = data.data();
+    size_t remaining = data.size();
+    while (remaining > 0) {
+        ssize_t written = write(fd, ptr, remaining);
+        if (written <= 0) {
+            return false;
+        }
+        ptr += written;
+        remaining -= written;
+    }
+    return true;
 }
 }
 
@@ -146,33 +187,16 @@ bool InlineRunner::run(AbstractKVStore& store,
     return execute_builtin(store, func_name, params, client_id);
 }
 
-WarmIsolatedRunner::Worker::Worker() {
-    std::thread([this]() { loop(); }).detach();
-}
-
-void WarmIsolatedRunner::Worker::enqueue(std::function<void()> task) {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        tasks_.push(std::move(task));
-    }
-    cv_.notify_one();
-}
-
-void WarmIsolatedRunner::Worker::loop() {
-    while (true) {
-        std::function<void()> task;
-        {
-            std::unique_lock<std::mutex> lock(mutex_);
-            cv_.wait(lock, [&]() { return !tasks_.empty(); });
-            task = std::move(tasks_.front());
-            tasks_.pop();
-        }
-        task();
-    }
-}
-
 WarmIsolatedRunner::WarmIsolatedRunner(int timeout_ms)
-    : timeout_ms_(normalized_timeout(timeout_ms)) {}
+    : timeout_ms_(normalized_timeout(timeout_ms)),
+      worker_command_(worker_command()) {}
+
+WarmIsolatedRunner::~WarmIsolatedRunner() {
+    std::lock_guard<std::mutex> lock(workers_mutex_);
+    for (auto& entry : workers_) {
+        entry.second->stop();
+    }
+}
 
 bool WarmIsolatedRunner::run(AbstractKVStore& store,
                              const std::string& func_name,
@@ -182,14 +206,14 @@ bool WarmIsolatedRunner::run(AbstractKVStore& store,
     auto promise = std::make_shared<std::promise<bool>>();
     auto future = promise->get_future();
     auto worker = get_worker(key);
-    worker->enqueue([this, promise, &store, func_name, params, client_id]() {
+    std::thread([this, worker, promise, &store, func_name, params, client_id]() {
         try {
-            promise->set_value(execute_builtin(store, func_name, params, client_id));
+            promise->set_value(worker->invoke(store, *this, func_name, params, client_id));
         } catch (const std::exception& e) {
             spdlog::error("FUNC failed: {}", e.what());
             promise->set_value(false);
         }
-    });
+    }).detach();
     auto result = wait_with_timeout(future, timeout_ms_);
     if (result.timed_out) {
         restart_worker(key);
@@ -197,20 +221,171 @@ bool WarmIsolatedRunner::run(AbstractKVStore& store,
     return result.ok;
 }
 
-std::shared_ptr<WarmIsolatedRunner::Worker> WarmIsolatedRunner::get_worker(const std::string& key) {
+WarmIsolatedRunner::ProcessWorker::ProcessWorker(std::string command)
+    : command_(std::move(command)) {}
+
+WarmIsolatedRunner::ProcessWorker::~ProcessWorker() {
+    stop();
+}
+
+bool WarmIsolatedRunner::ProcessWorker::start() {
+    if (child_pid_ > 0) {
+        return true;
+    }
+    int to_child[2];
+    int from_child[2];
+    if (pipe(to_child) != 0 || pipe(from_child) != 0) {
+        spdlog::error("Failed to create FUNC worker pipes: {}", std::strerror(errno));
+        return false;
+    }
+    pid_t pid = fork();
+    if (pid < 0) {
+        spdlog::error("Failed to fork FUNC worker: {}", std::strerror(errno));
+        close(to_child[0]);
+        close(to_child[1]);
+        close(from_child[0]);
+        close(from_child[1]);
+        return false;
+    }
+    if (pid == 0) {
+        dup2(to_child[0], STDIN_FILENO);
+        dup2(from_child[1], STDOUT_FILENO);
+        close(to_child[0]);
+        close(to_child[1]);
+        close(from_child[0]);
+        close(from_child[1]);
+        execl("/bin/sh", "sh", "-c", command_.c_str(), static_cast<char*>(nullptr));
+        _exit(127);
+    }
+    close(to_child[0]);
+    close(from_child[1]);
+    child_pid_ = pid;
+    child_in_ = to_child[1];
+    child_out_ = from_child[0];
+    return true;
+}
+
+void WarmIsolatedRunner::ProcessWorker::stop() {
+    if (child_in_ >= 0) {
+        close(child_in_);
+        child_in_ = -1;
+    }
+    if (child_out_ >= 0) {
+        close(child_out_);
+        child_out_ = -1;
+    }
+    if (child_pid_ > 0) {
+        kill(child_pid_, SIGKILL);
+        waitpid(child_pid_, nullptr, 0);
+        child_pid_ = -1;
+    }
+}
+
+bool WarmIsolatedRunner::ProcessWorker::read_line(std::string& line) {
+    line.clear();
+    char c;
+    while (true) {
+        ssize_t n = read(child_out_, &c, 1);
+        if (n <= 0) {
+            return false;
+        }
+        if (c == '\n') {
+            return true;
+        }
+        line.push_back(c);
+    }
+}
+
+bool WarmIsolatedRunner::ProcessWorker::write_line(const std::string& line) {
+    return write_all(child_in_, line + "\n");
+}
+
+bool WarmIsolatedRunner::ProcessWorker::handle_get(AbstractKVStore& store,
+                                                   WarmIsolatedRunner& runner,
+                                                   const std::string& line,
+                                                   const std::string& client_id) {
+    auto parts = split_tab(line);
+    if (parts.size() != 2 || !runner.namespace_allowed(parts[1], client_id)) {
+        return write_line("VAL\t0\t\t0");
+    }
+    bool found = false;
+    auto value = store.get(parts[1], found);
+    if (!found) {
+        return write_line("VAL\t0\t\t0");
+    }
+    return write_line("VAL\t1\t" + get_value(value) + "\t" + std::to_string(value.second));
+}
+
+bool WarmIsolatedRunner::ProcessWorker::handle_write(AbstractKVStore& store,
+                                                     WarmIsolatedRunner& runner,
+                                                     const std::string& line,
+                                                     const std::string& client_id,
+                                                     bool validate) {
+    auto parts = split_tab(line);
+    if (parts.size() != 4 || !runner.namespace_allowed(parts[1], client_id)) {
+        return write_line("WROTE\t0");
+    }
+    ValueWithVersion_t value(parts[2], std::stoul(parts[3]));
+    bool ok = validate ? store.func_update_key(parts[1], value) : store.put(parts[1], value);
+    return write_line(std::string("WROTE\t") + (ok ? "1" : "0"));
+}
+
+bool WarmIsolatedRunner::ProcessWorker::invoke(AbstractKVStore& store,
+                                               WarmIsolatedRunner& runner,
+                                               const std::string& func_name,
+                                               const std::string& params,
+                                               const std::string& client_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!start()) {
+        return false;
+    }
+    if (!write_line("RUN\t" + func_name + "\t" + client_id + "\t" + params)) {
+        return false;
+    }
+    std::string line;
+    while (read_line(line)) {
+        if (line.rfind("RESULT\t", 0) == 0) {
+            auto parts = split_tab(line);
+            return parts.size() == 2 && parts[1] == "1";
+        }
+        if (line.rfind("GET\t", 0) == 0) {
+            if (!handle_get(store, runner, line, client_id)) {
+                return false;
+            }
+        } else if (line.rfind("PUT\t", 0) == 0) {
+            if (!handle_write(store, runner, line, client_id, false)) {
+                return false;
+            }
+        } else if (line.rfind("UPDATE\t", 0) == 0) {
+            if (!handle_write(store, runner, line, client_id, true)) {
+                return false;
+            }
+        } else {
+            spdlog::warn("Unknown FUNC worker message: {}", line);
+            return false;
+        }
+    }
+    return false;
+}
+
+std::shared_ptr<WarmIsolatedRunner::ProcessWorker> WarmIsolatedRunner::get_worker(const std::string& key) {
     std::lock_guard<std::mutex> lock(workers_mutex_);
     auto it = workers_.find(key);
     if (it != workers_.end()) {
         return it->second;
     }
-    auto worker = std::make_shared<Worker>();
+    auto worker = std::make_shared<ProcessWorker>(worker_command_);
     workers_[key] = worker;
     return worker;
 }
 
 void WarmIsolatedRunner::restart_worker(const std::string& key) {
     std::lock_guard<std::mutex> lock(workers_mutex_);
-    workers_[key] = std::make_shared<Worker>();
+    auto it = workers_.find(key);
+    if (it != workers_.end()) {
+        it->second->stop();
+    }
+    workers_[key] = std::make_shared<ProcessWorker>(worker_command_);
 }
 
 FreshIsolatedRunner::FreshIsolatedRunner(int timeout_ms)

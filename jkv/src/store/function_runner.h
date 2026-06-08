@@ -2,6 +2,7 @@
 
 #include <condition_variable>
 #include <future>
+#include <cstdio>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -55,31 +56,45 @@ private:
 class WarmIsolatedRunner : public FunctionRunner {
 public:
     explicit WarmIsolatedRunner(int timeout_ms);
+    ~WarmIsolatedRunner() override;
     bool run(AbstractKVStore& store,
              const std::string& func_name,
              const std::string& params,
              const std::string& client_id) override;
 
 private:
-    class Worker {
+    class ProcessWorker {
     public:
-        Worker();
-        void enqueue(std::function<void()> task);
+        explicit ProcessWorker(std::string command);
+        ~ProcessWorker();
+        bool invoke(AbstractKVStore& store,
+                    WarmIsolatedRunner& runner,
+                    const std::string& func_name,
+                    const std::string& params,
+                    const std::string& client_id);
+        void stop();
 
     private:
-        void loop();
+        bool start();
+        bool read_line(std::string& line);
+        bool write_line(const std::string& line);
+        bool handle_get(AbstractKVStore& store, WarmIsolatedRunner& runner, const std::string& line, const std::string& client_id);
+        bool handle_write(AbstractKVStore& store, WarmIsolatedRunner& runner, const std::string& line, const std::string& client_id, bool validate);
 
         std::mutex mutex_;
-        std::condition_variable cv_;
-        std::queue<std::function<void()>> tasks_;
+        std::string command_;
+        int child_pid_ = -1;
+        int child_in_ = -1;
+        int child_out_ = -1;
     };
 
-    std::shared_ptr<Worker> get_worker(const std::string& key);
+    std::shared_ptr<ProcessWorker> get_worker(const std::string& key);
     void restart_worker(const std::string& key);
 
     int timeout_ms_;
+    std::string worker_command_;
     std::mutex workers_mutex_;
-    std::unordered_map<std::string, std::shared_ptr<Worker>> workers_;
+    std::unordered_map<std::string, std::shared_ptr<ProcessWorker>> workers_;
 };
 
 class FreshIsolatedRunner : public FunctionRunner {
