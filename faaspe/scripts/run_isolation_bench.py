@@ -15,6 +15,28 @@ REPO = ROOT.parent
 JKV_DIR = REPO / "jkv"
 LIB_DIR = ROOT / "lib"
 
+MODE_ALIASES = {
+    "none": "none",
+    "l0": "none",
+    "lightweight": "lightweight",
+    "l1": "lightweight",
+    "strong": "strong",
+    "l2": "strong",
+}
+
+MODE_META = {
+    "none": ("L0", "No isolation / trusted inline"),
+    "lightweight": ("L1", "Lightweight isolation"),
+    "strong": ("L2", "Strong isolation"),
+}
+
+
+def normalize_mode(mode):
+    normalized = MODE_ALIASES.get(mode.strip().lower())
+    if not normalized:
+        raise ValueError(f"unknown isolation mode: {mode}")
+    return normalized
+
 
 def percentile(values, pct):
     values = sorted(values)
@@ -103,8 +125,11 @@ def measure(samples, fn):
 
 def summarize(mode, workload, rows):
     latencies = [latency for latency, ok in rows if ok]
+    level, name = MODE_META[mode]
     return {
         "mode": mode,
+        "isolation_level": level,
+        "isolation_name": name,
         "workload": workload,
         "samples": len(rows),
         "success": len(latencies),
@@ -163,11 +188,13 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     rows = []
-    for mode in [m.strip() for m in args.modes.split(",") if m.strip()]:
+    for mode in [normalize_mode(m) for m in args.modes.split(",") if m.strip()]:
         rows.extend(run_mode(mode, args, output_dir))
 
     fieldnames = [
         "mode",
+        "isolation_level",
+        "isolation_name",
         "workload",
         "samples",
         "success",

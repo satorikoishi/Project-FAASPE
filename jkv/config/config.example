@@ -1,4 +1,8 @@
 base_port = 50050
+# FUNC isolation mode:
+#   none / l0        : trusted inline execution, performance lower bound.
+#   lightweight / l1 : default; warm tenant/function runner path.
+#   strong / l2      : fresh runner path per invocation.
 isolation_mode = "lightweight"
 func_timeout_ms = 1000
 kvs: {

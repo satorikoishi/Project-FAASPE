@@ -24,17 +24,32 @@ TimeoutResult wait_with_timeout(std::future<bool>& future, int timeout_ms) {
     }
     return {future.get(), false};
 }
+
+std::string normalize_mode(const std::string& mode) {
+    if (mode == "l0" || mode == "L0" || mode == "none") {
+        return "none";
+    }
+    if (mode == "l1" || mode == "L1" || mode == "lightweight") {
+        return "lightweight";
+    }
+    if (mode == "l2" || mode == "L2" || mode == "strong") {
+        return "strong";
+    }
+    return "lightweight";
+}
 }
 
 std::unique_ptr<FunctionRunner> FunctionRunner::create(const std::string& mode, int timeout_ms) {
-    if (mode == "none") {
+    auto normalized = normalize_mode(mode);
+    if (mode != normalized && mode != "l0" && mode != "L0" &&
+        mode != "l1" && mode != "L1" && mode != "l2" && mode != "L2") {
+        spdlog::warn("Unknown isolation_mode '{}', falling back to lightweight", mode);
+    }
+    if (normalized == "none") {
         return std::make_unique<InlineRunner>(timeout_ms);
     }
-    if (mode == "strong") {
+    if (normalized == "strong") {
         return std::make_unique<FreshIsolatedRunner>(timeout_ms);
-    }
-    if (mode != "lightweight") {
-        spdlog::warn("Unknown isolation_mode '{}', falling back to lightweight", mode);
     }
     return std::make_unique<WarmIsolatedRunner>(timeout_ms);
 }

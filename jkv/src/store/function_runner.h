@@ -13,6 +13,17 @@
 
 class FunctionRunner {
 public:
+    // Isolation taxonomy used by the FaaSPE revision experiments:
+    //   L0 / none        : trusted inline execution in the current runtime.
+    //   L1 / lightweight : default mode. The production target is a warm
+    //                      process/container pool per tenant/function with
+    //                      timeout, resource limits, seccomp, and dropped caps.
+    //                      This prototype keeps the same interface and uses a
+    //                      warm per-tenant/function worker queue.
+    //   L2 / strong      : production target is a fresh container or stronger
+    //                      sandbox backend per invocation, or a reset-before-
+    //                      reuse microVM/gVisor/Firecracker backend. This
+    //                      prototype uses a fresh worker per invocation.
     virtual ~FunctionRunner() = default;
     virtual bool run(AbstractKVStore& store,
                      const std::string& func_name,
