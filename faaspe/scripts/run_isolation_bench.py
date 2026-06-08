@@ -6,7 +6,6 @@ import shutil
 import signal
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 
@@ -143,6 +142,7 @@ def summarize(mode, workload, rows):
 def run_mode(mode, args, output_dir):
     sys.path.insert(0, str(LIB_DIR))
     from jkv_client import JKVClient
+    import jkv_pb2
 
     servers = start_servers(mode, args.timeout_ms, output_dir)
     try:
@@ -163,23 +163,39 @@ def run_mode(mode, args, output_dir):
             summarize(mode, "list_traversal_depth8", measure(args.samples, lambda: client.func("TRAVERSE", "0 8", "tenantA")))
         )
 
-        bg = {"latency": 0.0, "ok": False}
+        cpu_req = jkv_pb2.Request()
+        cpu_req.reqtype = jkv_pb2.Request.FUNC
+        cpu_req.key = "CPU_LOOP"
+        cpu_req.payload.value = str(args.interference_us)
+        cpu_req.client_id = "tenantA"
+        cpu_start = time.perf_counter()
+        client.send_socket.send(cpu_req.SerializeToString())
 
-        def run_background_cpu():
-            bg["latency"], bg["ok"] = time_us(
-                lambda: client.func("CPU_LOOP", str(args.interference_us), "tenantA")
-            )
+        def get_expect_get_response():
+            req = jkv_pb2.Request()
+            req.reqtype = jkv_pb2.Request.GET
+            req.key = "bench-key"
+            req.client_id = "tenantA"
+            client.send_socket.send(req.SerializeToString())
+            while True:
+                response = client.recv_socket.recv()
+                res = jkv_pb2.Response()
+                res.ParseFromString(response)
+                if res.resptype == jkv_pb2.Response.GET:
+                    return res.ok
 
-        bg_thread = threading.Thread(target=run_background_cpu)
-        bg_thread.start()
-        time.sleep(0.01)
         get_rows = []
         for idx in range(args.samples):
-            latency, ok = time_us(lambda: client.get("bench-key")[2])
+            latency, ok = time_us(get_expect_get_response)
             get_rows.append((latency, ok))
-        bg_thread.join()
         interference = summarize(mode, "background_get_under_cpu_func", get_rows)
-        interference["background_cpu_func_us"] = bg["latency"]
+        while True:
+            response = client.recv_socket.recv()
+            res = jkv_pb2.Response()
+            res.ParseFromString(response)
+            if res.resptype == jkv_pb2.Response.FUNC:
+                break
+        interference["background_cpu_func_us"] = (time.perf_counter() - cpu_start) * 1e6
         results.append(interference)
         return results
     finally:

@@ -1,13 +1,22 @@
 #include "zmq_server.h"
 #include <zmq.hpp>
+#include <thread>
 #include "jkv.pb.h"
+#include "util/config.hpp"
 
 ZMQServer::ZMQServer(AbstractKVStore& store, const std::string& send_addr, const std::string& recv_addr)
-    : store_(store), context_(1), send_socket_(context_, ZMQ_PUSH), recv_socket_(context_, ZMQ_PULL) {
+    : store_(store),
+      context_(1),
+      send_socket_(context_, ZMQ_PUSH),
+      recv_socket_(context_, ZMQ_PULL),
+      async_func_(ConfUtil::get_isolation_mode() != "none" &&
+                  ConfUtil::get_isolation_mode() != "l0" &&
+                  ConfUtil::get_isolation_mode() != "L0") {
     send_socket_.bind(send_addr);
     recv_socket_.bind(recv_addr);
     spdlog::info("Server listening on {} for PUSH", send_addr);
     spdlog::info("Server listening on {} for PULL", recv_addr);
+    spdlog::info("FUNC async execution path: {}", async_func_);
 }
 
 void ZMQServer::Start() {
@@ -55,12 +64,18 @@ void ZMQServer::HandleRequest(zmq::message_t& request) {
     }
 }
 
+void ZMQServer::SendResponse(Response& response) {
+    std::lock_guard<std::mutex> lock(send_mutex_);
+    zmqutil::send_msg(response, send_socket_);
+}
+
 void ZMQServer::ProcessPing(const Request& request) {
     Response response;
     response.set_key(request.key());
 
     std::string response_str;
     response.SerializeToString(&response_str);
+    std::lock_guard<std::mutex> lock(send_mutex_);
     send_socket_.send(zmq::message_t(response_str.data(), response_str.size()), zmq::send_flags::none);
 }
 
@@ -71,7 +86,7 @@ void ZMQServer::ProcessPut(Request& request) {
     // Prepare a PutResponse message
     Response put_response;
     zmqutil::build_response(put_response, Response::PUT, request.key(), std::nullopt, ret, request.client_id());
-    zmqutil::send_msg(put_response, send_socket_);
+    SendResponse(put_response);
 }
 
 void ZMQServer::ProcessGet(const Request& request) {
@@ -81,7 +96,7 @@ void ZMQServer::ProcessGet(const Request& request) {
     // Prepare the GetResponse message
     Response get_response;
     zmqutil::build_response(get_response, Response::GET, request.key(), value_with_version, found, request.client_id());
-    zmqutil::send_msg(get_response, send_socket_);
+    SendResponse(get_response);
 }
 
 void ZMQServer::ProcessValidate(const Request& request) {
@@ -103,14 +118,19 @@ void ZMQServer::ProcessValidate(const Request& request) {
             kvv_proto->set_version(get_version(value_version));
         }
     }
-    zmqutil::send_msg(validate_response, send_socket_);
+    SendResponse(validate_response);
 }
 
 void ZMQServer::ProcessFunc(const Request& request) {
-    auto ret = store_.func(request.key(), request.payload().value(), request.client_id());
-
-    // Prepare the Response message
-    Response func_response;
-    zmqutil::build_response(func_response, Response::FUNC, request.key(), std::nullopt, ret, request.client_id());
-    zmqutil::send_msg(func_response, send_socket_);
+    auto run_func = [this](std::string key, std::string params, std::string client_id) {
+        auto ret = store_.func(key, params, client_id);
+        Response func_response;
+        zmqutil::build_response(func_response, Response::FUNC, key, std::nullopt, ret, client_id);
+        SendResponse(func_response);
+    };
+    if (async_func_) {
+        std::thread(run_func, request.key(), request.payload().value(), request.client_id()).detach();
+    } else {
+        run_func(request.key(), request.payload().value(), request.client_id());
+    }
 }

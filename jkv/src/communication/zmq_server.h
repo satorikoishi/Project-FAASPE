@@ -3,6 +3,7 @@
 #include <zmq.hpp>
 #include "store/abskvs.h"
 #include <string>
+#include <mutex>
 #include "jkv.pb.h"
 #include <iostream>
 #include "util/zmq_util.hpp"
@@ -14,6 +15,7 @@ public:
     void Start();
 
 private:
+    void SendResponse(Response& response);
     void HandleRequest(zmq::message_t& request);
     void ProcessPing(const Request& ping_request);
     void ProcessPut(Request& put_request);
@@ -25,4 +27,6 @@ private:
     zmq::context_t context_;
     zmq::socket_t send_socket_;
     zmq::socket_t recv_socket_;
+    std::mutex send_mutex_;
+    bool async_func_;
 };
