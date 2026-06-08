@@ -3,10 +3,14 @@ base_port = 50050
 #   none / l0        : trusted inline execution, performance lower bound.
 #   lightweight / l1 : default; warm tenant/function runner path.
 #   strong / l2      : fresh runner path per invocation.
-# L1 starts a warm external worker process by default:
+# L1 starts a warm external worker process by default for low overhead:
 #   JKV_L1_WORKER_CMD="./build/jkv_func_worker"
-# To test a container backend, point JKV_L1_WORKER_CMD at a warm-capable
-# container wrapper or a docker/podman command that runs jkv_func_worker.
+# To test the container backend:
+#   cd jkv
+#   ./scripts/build_func_worker_container.sh
+#   JKV_L1_WORKER_CMD="./scripts/run_func_worker_container.sh" ./build/jkv_server
+# The container wrapper uses cgroups CPU/memory/pids limits, no network,
+# no new privileges, read-only rootfs, and dropped Linux capabilities.
 isolation_mode = "lightweight"
 func_timeout_ms = 1000
 kvs: {
