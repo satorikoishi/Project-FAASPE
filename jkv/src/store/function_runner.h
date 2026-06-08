@@ -34,12 +34,39 @@ public:
     static std::unique_ptr<FunctionRunner> create(const std::string& mode, int timeout_ms);
 
 protected:
+    friend class ExternalFuncWorker;
+
     bool execute_builtin(AbstractKVStore& store,
                          const std::string& func_name,
                          const std::string& params,
                          const std::string& client_id);
     bool namespace_allowed(const std::string& key, const std::string& client_id) const;
     std::string worker_key(const std::string& func_name, const std::string& client_id) const;
+};
+
+class ExternalFuncWorker {
+public:
+    explicit ExternalFuncWorker(std::string command);
+    ~ExternalFuncWorker();
+    bool invoke(AbstractKVStore& store,
+                FunctionRunner& runner,
+                const std::string& func_name,
+                const std::string& params,
+                const std::string& client_id);
+    void stop();
+
+private:
+    bool start();
+    bool read_line(std::string& line);
+    bool write_line(const std::string& line);
+    bool handle_get(AbstractKVStore& store, FunctionRunner& runner, const std::string& line, const std::string& client_id);
+    bool handle_write(AbstractKVStore& store, FunctionRunner& runner, const std::string& line, const std::string& client_id, bool validate);
+
+    std::mutex mutex_;
+    std::string command_;
+    int child_pid_ = -1;
+    int child_in_ = -1;
+    int child_out_ = -1;
 };
 
 class InlineRunner : public FunctionRunner {
@@ -63,38 +90,13 @@ public:
              const std::string& client_id) override;
 
 private:
-    class ProcessWorker {
-    public:
-        explicit ProcessWorker(std::string command);
-        ~ProcessWorker();
-        bool invoke(AbstractKVStore& store,
-                    WarmIsolatedRunner& runner,
-                    const std::string& func_name,
-                    const std::string& params,
-                    const std::string& client_id);
-        void stop();
-
-    private:
-        bool start();
-        bool read_line(std::string& line);
-        bool write_line(const std::string& line);
-        bool handle_get(AbstractKVStore& store, WarmIsolatedRunner& runner, const std::string& line, const std::string& client_id);
-        bool handle_write(AbstractKVStore& store, WarmIsolatedRunner& runner, const std::string& line, const std::string& client_id, bool validate);
-
-        std::mutex mutex_;
-        std::string command_;
-        int child_pid_ = -1;
-        int child_in_ = -1;
-        int child_out_ = -1;
-    };
-
-    std::shared_ptr<ProcessWorker> get_worker(const std::string& key);
+    std::shared_ptr<ExternalFuncWorker> get_worker(const std::string& key);
     void restart_worker(const std::string& key);
 
     int timeout_ms_;
     std::string worker_command_;
     std::mutex workers_mutex_;
-    std::unordered_map<std::string, std::shared_ptr<ProcessWorker>> workers_;
+    std::unordered_map<std::string, std::shared_ptr<ExternalFuncWorker>> workers_;
 };
 
 class FreshIsolatedRunner : public FunctionRunner {
@@ -106,4 +108,5 @@ public:
              const std::string& client_id) override;
 private:
     int timeout_ms_;
+    std::string worker_command_;
 };

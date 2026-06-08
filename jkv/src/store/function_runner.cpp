@@ -221,14 +221,14 @@ bool WarmIsolatedRunner::run(AbstractKVStore& store,
     return result.ok;
 }
 
-WarmIsolatedRunner::ProcessWorker::ProcessWorker(std::string command)
+ExternalFuncWorker::ExternalFuncWorker(std::string command)
     : command_(std::move(command)) {}
 
-WarmIsolatedRunner::ProcessWorker::~ProcessWorker() {
+ExternalFuncWorker::~ExternalFuncWorker() {
     stop();
 }
 
-bool WarmIsolatedRunner::ProcessWorker::start() {
+bool ExternalFuncWorker::start() {
     if (child_pid_ > 0) {
         return true;
     }
@@ -265,7 +265,7 @@ bool WarmIsolatedRunner::ProcessWorker::start() {
     return true;
 }
 
-void WarmIsolatedRunner::ProcessWorker::stop() {
+void ExternalFuncWorker::stop() {
     if (child_in_ >= 0) {
         close(child_in_);
         child_in_ = -1;
@@ -281,7 +281,7 @@ void WarmIsolatedRunner::ProcessWorker::stop() {
     }
 }
 
-bool WarmIsolatedRunner::ProcessWorker::read_line(std::string& line) {
+bool ExternalFuncWorker::read_line(std::string& line) {
     line.clear();
     char c;
     while (true) {
@@ -296,14 +296,14 @@ bool WarmIsolatedRunner::ProcessWorker::read_line(std::string& line) {
     }
 }
 
-bool WarmIsolatedRunner::ProcessWorker::write_line(const std::string& line) {
+bool ExternalFuncWorker::write_line(const std::string& line) {
     return write_all(child_in_, line + "\n");
 }
 
-bool WarmIsolatedRunner::ProcessWorker::handle_get(AbstractKVStore& store,
-                                                   WarmIsolatedRunner& runner,
-                                                   const std::string& line,
-                                                   const std::string& client_id) {
+bool ExternalFuncWorker::handle_get(AbstractKVStore& store,
+                                    FunctionRunner& runner,
+                                    const std::string& line,
+                                    const std::string& client_id) {
     auto parts = split_tab(line);
     if (parts.size() != 2 || !runner.namespace_allowed(parts[1], client_id)) {
         return write_line("VAL\t0\t\t0");
@@ -316,11 +316,11 @@ bool WarmIsolatedRunner::ProcessWorker::handle_get(AbstractKVStore& store,
     return write_line("VAL\t1\t" + get_value(value) + "\t" + std::to_string(value.second));
 }
 
-bool WarmIsolatedRunner::ProcessWorker::handle_write(AbstractKVStore& store,
-                                                     WarmIsolatedRunner& runner,
-                                                     const std::string& line,
-                                                     const std::string& client_id,
-                                                     bool validate) {
+bool ExternalFuncWorker::handle_write(AbstractKVStore& store,
+                                      FunctionRunner& runner,
+                                      const std::string& line,
+                                      const std::string& client_id,
+                                      bool validate) {
     auto parts = split_tab(line);
     if (parts.size() != 4 || !runner.namespace_allowed(parts[1], client_id)) {
         return write_line("WROTE\t0");
@@ -330,11 +330,11 @@ bool WarmIsolatedRunner::ProcessWorker::handle_write(AbstractKVStore& store,
     return write_line(std::string("WROTE\t") + (ok ? "1" : "0"));
 }
 
-bool WarmIsolatedRunner::ProcessWorker::invoke(AbstractKVStore& store,
-                                               WarmIsolatedRunner& runner,
-                                               const std::string& func_name,
-                                               const std::string& params,
-                                               const std::string& client_id) {
+bool ExternalFuncWorker::invoke(AbstractKVStore& store,
+                                FunctionRunner& runner,
+                                const std::string& func_name,
+                                const std::string& params,
+                                const std::string& client_id) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!start()) {
         return false;
@@ -368,13 +368,13 @@ bool WarmIsolatedRunner::ProcessWorker::invoke(AbstractKVStore& store,
     return false;
 }
 
-std::shared_ptr<WarmIsolatedRunner::ProcessWorker> WarmIsolatedRunner::get_worker(const std::string& key) {
+std::shared_ptr<ExternalFuncWorker> WarmIsolatedRunner::get_worker(const std::string& key) {
     std::lock_guard<std::mutex> lock(workers_mutex_);
     auto it = workers_.find(key);
     if (it != workers_.end()) {
         return it->second;
     }
-    auto worker = std::make_shared<ProcessWorker>(worker_command_);
+    auto worker = std::make_shared<ExternalFuncWorker>(worker_command_);
     workers_[key] = worker;
     return worker;
 }
@@ -385,11 +385,12 @@ void WarmIsolatedRunner::restart_worker(const std::string& key) {
     if (it != workers_.end()) {
         it->second->stop();
     }
-    workers_[key] = std::make_shared<ProcessWorker>(worker_command_);
+    workers_[key] = std::make_shared<ExternalFuncWorker>(worker_command_);
 }
 
 FreshIsolatedRunner::FreshIsolatedRunner(int timeout_ms)
-    : timeout_ms_(normalized_timeout(timeout_ms)) {}
+    : timeout_ms_(normalized_timeout(timeout_ms)),
+      worker_command_(worker_command()) {}
 
 bool FreshIsolatedRunner::run(AbstractKVStore& store,
                               const std::string& func_name,
@@ -397,13 +398,20 @@ bool FreshIsolatedRunner::run(AbstractKVStore& store,
                               const std::string& client_id) {
     auto promise = std::make_shared<std::promise<bool>>();
     auto future = promise->get_future();
-    std::thread([this, promise, &store, func_name, params, client_id]() {
+    auto worker = std::make_shared<ExternalFuncWorker>(worker_command_);
+    std::thread([this, worker, promise, &store, func_name, params, client_id]() {
         try {
-            promise->set_value(execute_builtin(store, func_name, params, client_id));
+            promise->set_value(worker->invoke(store, *this, func_name, params, client_id));
+            worker->stop();
         } catch (const std::exception& e) {
             spdlog::error("FUNC failed: {}", e.what());
+            worker->stop();
             promise->set_value(false);
         }
     }).detach();
-    return wait_with_timeout(future, timeout_ms_).ok;
+    auto result = wait_with_timeout(future, timeout_ms_);
+    if (result.timed_out) {
+        worker->stop();
+    }
+    return result.ok;
 }

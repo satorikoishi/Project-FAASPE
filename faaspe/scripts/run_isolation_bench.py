@@ -6,6 +6,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -162,13 +163,23 @@ def run_mode(mode, args, output_dir):
             summarize(mode, "list_traversal_depth8", measure(args.samples, lambda: client.func("TRAVERSE", "0 8", "tenantA")))
         )
 
-        bg_latency, bg_ok = time_us(lambda: client.func("CPU_LOOP", str(args.interference_us), "tenantA"))
-        get_put_rows = []
+        bg = {"latency": 0.0, "ok": False}
+
+        def run_background_cpu():
+            bg["latency"], bg["ok"] = time_us(
+                lambda: client.func("CPU_LOOP", str(args.interference_us), "tenantA")
+            )
+
+        bg_thread = threading.Thread(target=run_background_cpu)
+        bg_thread.start()
+        time.sleep(0.01)
+        get_rows = []
         for idx in range(args.samples):
-            latency, ok = time_us(lambda idx=idx: client.put(f"interfere-{idx}", "x", idx + 1))
-            get_put_rows.append((latency, ok and bg_ok))
-        interference = summarize(mode, "background_get_put_during_cpu_func", get_put_rows)
-        interference["background_cpu_func_us"] = bg_latency
+            latency, ok = time_us(lambda: client.get("bench-key")[2])
+            get_rows.append((latency, ok))
+        bg_thread.join()
+        interference = summarize(mode, "background_get_under_cpu_func", get_rows)
+        interference["background_cpu_func_us"] = bg["latency"]
         results.append(interference)
         return results
     finally:
