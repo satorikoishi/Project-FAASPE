@@ -170,8 +170,10 @@ def run_mode(mode, args, output_dir):
         cpu_req.client_id = "tenantA"
         cpu_start = time.perf_counter()
         client.send_socket.send(cpu_req.SerializeToString())
+        seen_cpu_response = False
 
         def get_expect_get_response():
+            nonlocal seen_cpu_response
             req = jkv_pb2.Request()
             req.reqtype = jkv_pb2.Request.GET
             req.key = "bench-key"
@@ -183,18 +185,20 @@ def run_mode(mode, args, output_dir):
                 res.ParseFromString(response)
                 if res.resptype == jkv_pb2.Response.GET:
                     return res.ok
+                if res.resptype == jkv_pb2.Response.FUNC:
+                    seen_cpu_response = True
 
         get_rows = []
         for idx in range(args.samples):
             latency, ok = time_us(get_expect_get_response)
             get_rows.append((latency, ok))
         interference = summarize(mode, "background_get_under_cpu_func", get_rows)
-        while True:
+        while not seen_cpu_response:
             response = client.recv_socket.recv()
             res = jkv_pb2.Response()
             res.ParseFromString(response)
             if res.resptype == jkv_pb2.Response.FUNC:
-                break
+                seen_cpu_response = True
         interference["background_cpu_func_us"] = (time.perf_counter() - cpu_start) * 1e6
         results.append(interference)
         return results
