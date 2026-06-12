@@ -19,12 +19,12 @@ def update_build(addr_list, f_name):
     for idx, addr in enumerate(addr_list):
         with Connection(addr) as c:
             with c.cd(REMOTE_PROJECT_DIR):
-                c.run('git pull')
+                c.run('git fetch origin master && git reset --hard origin/master')
             with c.cd(REMOTE_JKV_DIR):
-                c.run(f'git pull && {cloudlab_cmake_fix} && make')
+                c.run(f'{cloudlab_cmake_fix} && make')
             if idx == 0:    # client node only
                 with c.cd(REMOTE_FAASPE_DIR):
-                    c.run(f'git pull && python3 ./platform/cli.py create {f_name}')
+                    c.run(f'python3 ./platform/cli.py create {f_name}')
 
 def clear(remote_ip, f_name):
     with Connection(remote_ip) as c:

@@ -25,7 +25,7 @@ def batch_init():
     print("Batch init start")
     repo_url = get_repo_url()
     init_cmd = ['mkdir -p ~/projects',
-                f'if [ -d {PROJECT_DIR}/.git ]; then cd {PROJECT_DIR} && git pull; else git clone {repo_url} {PROJECT_DIR}; fi',
+                f'if [ -d {PROJECT_DIR}/.git ]; then cd {PROJECT_DIR} && git fetch origin master && git reset --hard origin/master; else git clone {repo_url} {PROJECT_DIR}; fi',
                 f'ln -sfn {PROJECT_DIR}/faaspe ~/projects/faaspe',
                 f'ln -sfn {PROJECT_DIR}/jkv ~/projects/jkv']
     for cmd in init_cmd:
