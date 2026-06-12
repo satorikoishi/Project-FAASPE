@@ -1,22 +1,16 @@
+set -e
+
 sudo apt update
-sudo apt install -y autoconf automake pkg-config libtool build-essential g++ make unzip cmake libzmq3-dev libspdlog-dev libfmt-dev libconfig++-dev
+sudo apt install -y autoconf automake pkg-config libtool build-essential g++ make unzip cmake protobuf-compiler libprotobuf-dev libzmq3-dev libspdlog-dev libfmt-dev libconfig++-dev
 
-# protobuf by grpc 1.68.0
-export MY_INSTALL_DIR=$HOME/.local
-mkdir -p $MY_INSTALL_DIR
-echo 'export PATH=$MY_INSTALL_DIR/bin:$PATH' >> ~/.bashrc
-export PATH=$MY_INSTALL_DIR/bin:$PATH
-cd ~/grpc
-mkdir -p cmake/build
-pushd cmake/build
-cmake -DgRPC_INSTALL=ON \
-      -DgRPC_BUILD_TESTS=OFF \
-      -DCMAKE_INSTALL_PREFIX=$MY_INSTALL_DIR \
-      ../..
-make -j 4
-make install
-popd
+git config --global --add safe.directory ~/projects/Project-FAASPE || true
 
-# build
 cd ~/projects/jkv
+
+# CloudLab Ubuntu provides Protobuf through CMake's module mode rather than
+# protobuf CONFIG mode. Keep the source checkout buildable after git pull.
+sed -i 's/Protobuf CONFIG REQUIRED/Protobuf REQUIRED/' CMakeLists.txt
+sed -i 's#^set(_PROTOBUF_LIBPROTOBUF .*#set(_PROTOBUF_LIBPROTOBUF protobuf)#' CMakeLists.txt
+sed -i 's#^set(_PROTOBUF_PROTOC .*#set(_PROTOBUF_PROTOC /usr/bin/protoc)#' CMakeLists.txt
+
 make

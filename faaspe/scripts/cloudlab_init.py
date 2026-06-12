@@ -27,11 +27,13 @@ def batch_init():
     init_cmd = ['mkdir -p ~/projects',
                 f'if [ -d {PROJECT_DIR}/.git ]; then cd {PROJECT_DIR} && git pull; else git clone {repo_url} {PROJECT_DIR}; fi',
                 f'ln -sfn {PROJECT_DIR}/faaspe ~/projects/faaspe',
-                f'ln -sfn {PROJECT_DIR}/jkv ~/projects/jkv',
-                'if [ -d ~/grpc/.git ]; then cd ~/grpc && git pull; else git clone --recurse-submodules -b v1.68.0 --depth 1 --shallow-submodules https://github.com/grpc/grpc ~/grpc; fi',
-                'cd ~/projects/faaspe && bash ./scripts/init.sh']
+                f'ln -sfn {PROJECT_DIR}/jkv ~/projects/jkv']
     for cmd in init_cmd:
         g_host.run(cmd)
+    for conn in conns:
+        conn.put(str(FAASPE_DIR / 'scripts' / 'init.sh'), f'{PROJECT_DIR}/faaspe/scripts/init.sh')
+        conn.put(str(FAASPE_DIR / 'scripts' / 'docker_init.sh'), f'{PROJECT_DIR}/faaspe/scripts/docker_init.sh')
+    g_host.run('cd ~/projects/faaspe && bash ./scripts/init.sh')
     print("Batch init finished")
     
     print("Master init start")

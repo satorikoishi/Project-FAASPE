@@ -1,5 +1,6 @@
 import sys
-sys.path.append('./scripts')
+from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from runner import *
 

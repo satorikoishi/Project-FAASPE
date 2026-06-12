@@ -3,28 +3,41 @@ from fabric.group import ThreadingGroup
 import threading
 import time
 from param_parser import *
+from pathlib import Path
+
+def remote_abs(path, home):
+    if path.startswith("~/"):
+        return f"{home}/{path[2:]}"
+    return path
 
 def update_build(addr_list, f_name):
+    cloudlab_cmake_fix = (
+        "sed -i 's/Protobuf CONFIG REQUIRED/Protobuf REQUIRED/' CMakeLists.txt && "
+        "sed -i 's#^set(_PROTOBUF_LIBPROTOBUF .*#set(_PROTOBUF_LIBPROTOBUF protobuf)#' CMakeLists.txt && "
+        "sed -i 's#^set(_PROTOBUF_PROTOC .*#set(_PROTOBUF_PROTOC /usr/bin/protoc)#' CMakeLists.txt"
+    )
     for idx, addr in enumerate(addr_list):
         with Connection(addr) as c:
-            with c.cd('~/projects/jkv'):
-                c.run('git pull && make')
+            with c.cd(REMOTE_PROJECT_DIR):
+                c.run('git pull')
+            with c.cd(REMOTE_JKV_DIR):
+                c.run(f'git pull && {cloudlab_cmake_fix} && make')
             if idx == 0:    # client node only
-                with c.cd('~/projects/faaspe'):
+                with c.cd(REMOTE_FAASPE_DIR):
                     c.run(f'git pull && python3 ./platform/cli.py create {f_name}')
 
 def clear(remote_ip, f_name):
     with Connection(remote_ip) as c:
-        with c.cd('~/projects/faaspe'):
+        with c.cd(REMOTE_FAASPE_DIR):
             c.run(f'python3 ./platform/cli.py delete {f_name}')
 
 def run_kvs(kvs_addr, home, stop_event, use_occ=False):
     with Connection(kvs_addr) as c:
         print("Running server on remote machine...")
-        with c.cd('~/projects/jkv'):
+        with c.cd(REMOTE_JKV_DIR):
             # Place config first
             # home = c.run("echo $HOME").stdout.strip()
-            c.put(f'{WORKING_DIR}/faaspe/config.ini', f'{home}/projects/jkv/config/config.ini')
+            c.put(str(FAASPE_DIR / 'config.ini'), f'{remote_abs(REMOTE_JKV_DIR, home)}/config/config.ini')
             # Run
             if use_occ:
                 result = c.run('./build/occ_server', asynchronous=True)
@@ -41,10 +54,10 @@ def run_kvs(kvs_addr, home, stop_event, use_occ=False):
 def run_cache(cache_addr, home, stop_event, use_occ=False):
     with Connection(cache_addr) as c:
         print("Running cache on remote machine...")
-        with c.cd('~/projects/jkv'):
+        with c.cd(REMOTE_JKV_DIR):
             # Place config first
             # home = c.run("echo $HOME").stdout.strip()
-            c.put(f'{WORKING_DIR}/faaspe/config.ini', f'{home}/projects/jkv/config/config.ini')
+            c.put(str(FAASPE_DIR / 'config.ini'), f'{remote_abs(REMOTE_JKV_DIR, home)}/config/config.ini')
             # Run
             if use_occ:
                 result = c.run('./build/occ_cache', asynchronous=True)
@@ -73,7 +86,7 @@ def run_client(client_addr, stop_event, f_name, num_operations, strategy, **kwar
         print("Running client on remote machine...")
         # Generate json
         j_str = generate_json(f_name, num_operations, strategy, **kwargs)
-        with c.cd('~/projects/faaspe'):
+        with c.cd(REMOTE_FAASPE_DIR):
             try:
                 cmd = f'python3 ./platform/cli.py invoke {f_name} --params \'{j_str}\''
                 print(cmd)
@@ -118,9 +131,13 @@ def remote_run(f_name, num_operations=1000, strategy='local', use_occ=False, **k
     run('remote', f_name, num_operations, strategy, use_occ, **kwargs)
 
 def fetch_data(remote_ip, f_name, local_dir=".", local_path_suffix="", container_file_dir="/usr/src/app/results", file_name='temp.csv'):
+    local_path = FAASPE_DIR / "results" / local_dir / f"{f_name}{local_path_suffix}.csv"
+    local_path.parent.mkdir(parents=True, exist_ok=True)
     with Connection(remote_ip) as c:
-        c.run(f'docker cp faaspe-{f_name}:{container_file_dir}/{file_name} ~/projects/faaspe/{file_name}')
-        c.get(f'projects/faaspe/{file_name}', f'./results/{local_dir}/{f_name}{local_path_suffix}.csv')
+        home = c.run("echo $HOME", hide=True).stdout.strip()
+        remote_tmp = f"{remote_abs(REMOTE_FAASPE_DIR, home)}/{file_name}"
+        c.run(f'docker cp faaspe-{f_name}:{container_file_dir}/{file_name} {remote_tmp}')
+        c.get(remote_tmp, str(local_path))
 
 def test():
     pass
