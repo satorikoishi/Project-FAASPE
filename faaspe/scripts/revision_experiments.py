@@ -67,12 +67,19 @@ def run_worker(
     operations,
     args,
     extra_env=None,
+    phase="measure",
 ):
     run_id = f"{workload}__{case['case_id']}__{variant}__rep{rep}__w{worker}"
     run_dir = Path(args.output_dir) / "raw" / run_id
+    if phase == "measure" and args.skip_existing and (run_dir / "metadata.json").exists() and (run_dir / "invocations.jsonl").exists():
+        print(f"skip existing {run_id}", flush=True)
+        return None
     run_dir.mkdir(parents=True, exist_ok=True)
+    phase_dir = run_dir if phase == "measure" else run_dir / phase
+    phase_dir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
+    invocation_log_enabled = "1" if phase == "measure" else "0"
     env.update(
         {
             "PYTHONPATH": str(LIB_DIR),
@@ -82,9 +89,9 @@ def run_worker(
             "NUM_OPERATION": str(operations),
             "STRATEGY": variant_conf["strategy"],
             "FAASPE_RANDOM_SEED": str(args.seed + rep * 100000 + worker),
-            "FAASPE_RESULT_DIR": str(run_dir),
-            "FAASPE_INVOCATION_LOG_ENABLED": "1",
-            "FAASPE_INVOCATION_LOG_PATH": str(run_dir / "invocations.jsonl"),
+            "FAASPE_RESULT_DIR": str(phase_dir),
+            "FAASPE_INVOCATION_LOG_ENABLED": invocation_log_enabled,
+            "FAASPE_INVOCATION_LOG_PATH": str(phase_dir / "invocations.jsonl"),
         }
     )
     env.update({key: str(value) for key, value in case["params"].items()})
@@ -102,6 +109,7 @@ def run_worker(
         "worker": worker,
         "concurrency": args.concurrency,
         "num_operations": operations,
+        "phase": phase,
         "seed": int(env["FAASPE_RANDOM_SEED"]),
         "params": case["params"],
         "env": {
@@ -110,33 +118,61 @@ def run_worker(
             if key.startswith("FAASPE_") or key in {"PUSH_ADDR", "PULL_ADDR", "STRATEGY"}
         },
     }
-    (run_dir / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True))
+    (phase_dir / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True))
 
     handler_dir = FUNCTIONS_DIR / workload
     cmd = [sys.executable, "handler.py"]
-    stdout = open(run_dir / "stdout.txt", "w")
-    stderr = open(run_dir / "stderr.txt", "w")
+    stdout = open(phase_dir / "stdout.txt", "w")
+    stderr = open(phase_dir / "stderr.txt", "w")
     proc = subprocess.Popen(cmd, cwd=handler_dir, env=env, stdout=stdout, stderr=stderr)
-    return proc, stdout, stderr, run_dir
+    return proc, stdout, stderr, phase_dir
 
 
 def run_case(workload, case, variant, variant_conf, rep, args, extra_env=None):
+    if args.warmup_operations > 0:
+        warmup_procs = []
+        for worker in range(args.concurrency):
+            warmup_procs.append(
+                run_worker(
+                    workload,
+                    case,
+                    variant,
+                    variant_conf,
+                    rep,
+                    worker,
+                    args.warmup_operations,
+                    args,
+                    extra_env,
+                    phase="warmup",
+                )
+            )
+        failed = []
+        for proc, stdout, stderr, run_dir in warmup_procs:
+            rc = proc.wait()
+            stdout.close()
+            stderr.close()
+            if rc != 0:
+                failed.append((run_dir, rc))
+        if failed:
+            details = ", ".join(f"{run_dir}:{rc}" for run_dir, rc in failed)
+            raise RuntimeError(f"failed warmup workers: {details}")
+
     per_worker_ops = math.ceil(args.num_operations / args.concurrency)
     procs = []
     for worker in range(args.concurrency):
-        procs.append(
-            run_worker(
-                workload,
-                case,
-                variant,
-                variant_conf,
-                rep,
-                worker,
-                per_worker_ops,
-                args,
-                extra_env,
-            )
+        proc_info = run_worker(
+            workload,
+            case,
+            variant,
+            variant_conf,
+            rep,
+            worker,
+            per_worker_ops,
+            args,
+            extra_env,
         )
+        if proc_info:
+            procs.append(proc_info)
 
     failed = []
     for proc, stdout, stderr, run_dir in procs:
@@ -158,6 +194,7 @@ def write_experiment_manifest(args, workloads, threshold_multipliers):
         "repetitions": args.repetitions,
         "concurrency": args.concurrency,
         "num_operations": args.num_operations,
+        "warmup_operations": args.warmup_operations,
         "seed": args.seed,
         "threshold_multipliers": threshold_multipliers,
         "push_addr": args.push_addr,
@@ -178,12 +215,14 @@ def main():
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--num-operations", type=int, default=1000)
+    parser.add_argument("--warmup-operations", type=int, default=int(os.getenv("FAASPE_WARMUP_OPERATIONS", "0")))
     parser.add_argument("--seed", type=int, default=20260606)
     parser.add_argument("--push-addr", default=os.getenv("PUSH_ADDR", "tcp://10.10.1.1:50053"))
     parser.add_argument("--pull-addr", default=os.getenv("PULL_ADDR", "tcp://10.10.1.1:50054"))
     parser.add_argument("--threshold-multipliers", default="0.5,0.75,1.0,1.25,1.5,2.0")
     parser.add_argument("--skip-ablation", action="store_true")
     parser.add_argument("--skip-threshold-sensitivity", action="store_true")
+    parser.add_argument("--skip-existing", action="store_true")
     parser.add_argument("--summarize-only", action="store_true")
     args = parser.parse_args()
     args.output_dir = str(Path(args.output_dir).resolve())

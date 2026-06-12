@@ -27,6 +27,7 @@ config.ini
 temp.csv
 temp_detailed.csv
 openfaas-archive/
+data-archive/
 combined_code.txt
 
 # Generated protobuf outputs commonly regenerated locally
