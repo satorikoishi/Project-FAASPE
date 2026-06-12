@@ -4,6 +4,7 @@ from param_parser import *
 
 PROJECT_REPO = 'github.com/satorikoishi/Project-FAASPE.git'
 PROJECT_DIR = '~/projects/Project-FAASPE'
+PROJECT_SFTP_DIR = 'projects/Project-FAASPE'
 
 def get_host_connections():
     conns = []
@@ -31,8 +32,9 @@ def batch_init():
     for cmd in init_cmd:
         g_host.run(cmd)
     for conn in conns:
-        conn.put(str(FAASPE_DIR / 'scripts' / 'init.sh'), f'{PROJECT_DIR}/faaspe/scripts/init.sh')
-        conn.put(str(FAASPE_DIR / 'scripts' / 'docker_init.sh'), f'{PROJECT_DIR}/faaspe/scripts/docker_init.sh')
+        conn.run(f'mkdir -p {PROJECT_DIR}/faaspe/scripts')
+        conn.put(str(FAASPE_DIR / 'scripts' / 'init.sh'), f'{PROJECT_SFTP_DIR}/faaspe/scripts/init.sh')
+        conn.put(str(FAASPE_DIR / 'scripts' / 'docker_init.sh'), f'{PROJECT_SFTP_DIR}/faaspe/scripts/docker_init.sh')
     g_host.run('cd ~/projects/faaspe && bash ./scripts/init.sh')
     print("Batch init finished")
     
