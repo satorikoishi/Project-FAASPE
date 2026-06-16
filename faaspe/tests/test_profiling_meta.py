@@ -160,3 +160,13 @@ def test_existing_placement_behavior_unchanged_when_profiling_disabled(monkeypat
     profiler = Profiler.from_env()
     plan = profiler.choose("list-traversal", {"depth": 8}, arbiter)
     assert plan.placement == arbiter.explain("list-traversal", {"depth": 8}).placement
+
+
+def test_arbiter_storage_depth_threshold_can_include_depth_four(monkeypatch):
+    monkeypatch.delenv("FAASPE_STORAGE_DEPTH_THRESHOLD", raising=False)
+    assert Arbiter().explain("list-traversal", {"depth": 4}).placement == "native"
+
+    monkeypatch.setenv("FAASPE_STORAGE_DEPTH_THRESHOLD", "4")
+    decision = Arbiter().explain("list-traversal", {"depth": 4})
+    assert decision.placement == "func"
+    assert decision.reason == "calibrated_depth_threshold"

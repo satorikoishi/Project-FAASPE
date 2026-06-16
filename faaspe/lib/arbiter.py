@@ -105,6 +105,8 @@ class Arbiter:
         self.storage_func_us = (
             float(os.getenv("FAASPE_STORAGE_FUNC_US", storage_func_us)) * threshold_multiplier
         )
+        threshold = os.getenv("FAASPE_STORAGE_DEPTH_THRESHOLD", "")
+        self.storage_depth_threshold = float(threshold) if threshold else None
         self.object_size_threshold = int(
             os.getenv("FAASPE_OBJECT_SIZE_THRESHOLD", object_size_threshold)
         )
@@ -177,6 +179,21 @@ class Arbiter:
                 self.unknown_default,
                 "unsupported_static_analysis",
                 object_size=object_size,
+            )
+
+        if (
+            self.storage_depth_threshold is not None
+            and access_depth >= self.storage_depth_threshold
+        ):
+            local_latency = self.local_base_us + access_depth * self.local_access_us
+            storage_latency = self.storage_func_us + float(params.get("storage_load_us", 0) or 0)
+            return PlacementDecision(
+                "func",
+                "calibrated_depth_threshold",
+                access_depth=access_depth,
+                object_size=object_size,
+                compute_latency_us=local_latency,
+                storage_latency_us=storage_latency,
             )
 
         local_latency = self.local_base_us + access_depth * self.local_access_us
