@@ -36,7 +36,7 @@ void ZMQServer::Start() {
 void ZMQServer::HandleRequest(zmq::message_t& request) {
     Request request_wrapper;
 
-    if (!request_wrapper.ParseFromString(std::string((char*)request.data(), request.size()))) {
+    if (!request_wrapper.ParseFromArray(request.data(), request.size())) {
         std::cerr << "Failed to parse request" << std::endl;
         return;
     }

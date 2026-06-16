@@ -42,7 +42,7 @@ struct KVVHash {
 using ValidationSet = std::unordered_set<KeyWithVersion_t, KeyWithVersionHash>;
 using KVVSet = std::unordered_set<KVV_t, KVVHash>;
 
-inline Value_t get_value(const ValueWithVersion_t &value) {
+inline const Value_t& get_value(const ValueWithVersion_t &value) {
     return value.first;
 }
 
