@@ -77,7 +77,16 @@ void CacheServer::ProcessUserRequest(const Request& req) {
 
                 Response response;
                 ValueWithVersion_t value_version = {get_value(it->second), get_version(it->second)};
-                zmqutil::build_response(response, Response::GET, req.key(), value_version, true, req.client_id());
+                zmqutil::build_response(
+                    response,
+                    Response::GET,
+                    req.key(),
+                    value_version,
+                    true,
+                    req.client_id(),
+                    true,
+                    true,
+                    static_cast<int64_t>(get_value(value_version).size()));
 
                 // Send the cached response back to the user
                 zmqutil::send_msg(response, send_socket_);
@@ -126,7 +135,14 @@ void CacheServer::ProcessKVResponse(const Response& resp) {
             cache_[resp.key()] = {resp.payload().value(), resp.payload().version()}; // TODO: consider using std::move
 
             // Send the response back to the user
-            zmqutil::send_msg(resp, send_socket_);
+            Response response(resp);
+            auto* access_meta = response.mutable_access_meta();
+            access_meta->set_cache_hit_known(true);
+            access_meta->set_cache_hit(false);
+            if (access_meta->object_size() < 0 && response.ok()) {
+                access_meta->set_object_size(static_cast<int64_t>(response.payload().value().size()));
+            }
+            zmqutil::send_msg(response, send_socket_);
             spdlog::debug("Cached response for GET key: {}", resp.key());  // Log the response caching
             break;
         }

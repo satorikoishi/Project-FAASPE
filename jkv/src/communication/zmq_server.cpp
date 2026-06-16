@@ -92,10 +92,20 @@ void ZMQServer::ProcessPut(Request& request) {
 void ZMQServer::ProcessGet(const Request& request) {
     bool found;
     auto value_with_version = store_.get(request.key(), found);
+    int64_t object_size = found ? static_cast<int64_t>(get_value(value_with_version).size()) : -1;
 
     // Prepare the GetResponse message
     Response get_response;
-    zmqutil::build_response(get_response, Response::GET, request.key(), value_with_version, found, request.client_id());
+    zmqutil::build_response(
+        get_response,
+        Response::GET,
+        request.key(),
+        value_with_version,
+        found,
+        request.client_id(),
+        false,
+        false,
+        object_size);
     SendResponse(get_response);
 }
 

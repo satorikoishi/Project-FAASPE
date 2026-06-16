@@ -1,5 +1,6 @@
 #pragma once
 #include <zmq.hpp>
+#include <cstdint>
 #include <iostream>
 #include "common.hpp"
 #include "jkv.pb.h"
@@ -20,7 +21,10 @@ namespace zmqutil{
         const Key_t& key, 
         const std::optional<ValueWithVersion_t>& value_version = std::nullopt, 
         bool ok = true,
-        const std::string& client_id = "none"
+        const std::string& client_id = "none",
+        bool cache_hit_known = false,
+        bool cache_hit = false,
+        int64_t object_size = -1
     );
 
     ValidationSet convert_to_unordered_set(const google::protobuf::RepeatedPtrField<KeyVersion>& items);

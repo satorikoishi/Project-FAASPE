@@ -1,4 +1,5 @@
 #include "zmq_util.hpp"
+#include <cstdint>
 
 void zmqutil::build_request(
     Request &request, 
@@ -23,7 +24,10 @@ void zmqutil::build_response(
     const Key_t& key, 
     const std::optional<ValueWithVersion_t>& value_version, 
     bool ok,
-    const std::string& client_id
+    const std::string& client_id,
+    bool cache_hit_known,
+    bool cache_hit,
+    int64_t object_size
 ) {
     response.set_resptype(resp_type);
     response.set_key(key);
@@ -34,6 +38,10 @@ void zmqutil::build_response(
     }
     response.set_ok(ok);
     response.set_client_id(client_id);
+    auto* access_meta = response.mutable_access_meta();
+    access_meta->set_cache_hit_known(cache_hit_known);
+    access_meta->set_cache_hit(cache_hit);
+    access_meta->set_object_size(object_size);
 }
 
 ValidationSet zmqutil::convert_to_unordered_set(const google::protobuf::RepeatedPtrField<KeyVersion>& items) {

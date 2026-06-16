@@ -2,6 +2,15 @@ import jkv_pb2
 import zmq
 from access_meta import JKVAccessMeta, estimate_object_size, object_size_bucket, record_jkv_access
 
+
+def response_access_meta(res):
+    if not hasattr(res, "access_meta"):
+        return None
+    try:
+        return res.access_meta
+    except AttributeError:
+        return None
+
 class JKVClient:
     def __init__(self, server_recv_addr, server_send_addr):
         self.context = zmq.Context()
@@ -45,11 +54,19 @@ class JKVClient:
         req.client_id = client_id
 
         res = self._send_request(req)
-        size = estimate_object_size(res.payload.value) if res.ok else -1
+        meta = response_access_meta(res)
+        size = -1
+        cache_hit = None
+        if meta is not None:
+            size = int(meta.object_size)
+            if meta.cache_hit_known:
+                cache_hit = bool(meta.cache_hit)
+        if size < 0 and res.ok:
+            size = estimate_object_size(res.payload.value)
         record_jkv_access(
             JKVAccessMeta(
                 op="get",
-                cache_hit=None,
+                cache_hit=cache_hit,
                 object_size=size,
                 object_size_bucket=object_size_bucket(size),
             )

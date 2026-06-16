@@ -16,6 +16,12 @@ message ValueVersion {
     uint64 version = 2;
 }
 
+message AccessMeta {
+    bool cache_hit_known = 1;
+    bool cache_hit = 2;
+    int64 object_size = 3;
+}
+
 message Request {
     enum ReqType {
       PING = 0;
@@ -48,4 +54,5 @@ message Response {
     string client_id = 4;
     bool ok = 5;
     repeated KeyValueVersion update_set = 6;
+    AccessMeta access_meta = 7;
 }
