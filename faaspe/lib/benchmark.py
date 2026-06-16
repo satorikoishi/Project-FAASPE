@@ -6,6 +6,7 @@ import logging
 import random
 from typing import Callable
 from types import SimpleNamespace
+from access_meta import reset_invocation_access_meta, snapshot_invocation_access_meta
 from invocation_log import get_invocation_logger
 
 # General Benchmarking Class to measure latency and throughput
@@ -39,6 +40,8 @@ class Benchmark:
 
         # Perform the operations (GET/PUT, or any custom workload)
         for i in range(self.num_operations):
+            invocation_start_ns = time.perf_counter_ns()
+            reset_invocation_access_meta()
             # Prepare input for i-th op
             op_input = self.prepare_input(i)
             placement_params = self.arbiter_params(op_input)
@@ -61,7 +64,16 @@ class Benchmark:
             bench_util.record_profile(self.strategy, self.name, placement, latency * 1e6)
             if self.strategy == 'faaspe':
                 self.profiler_update_overheads.append(bench_util.profiler_update_overhead_us())
-            self.log_invocation(i, placement_params, placement, plan, latency)
+            access_meta = snapshot_invocation_access_meta()
+            self.log_invocation(
+                i,
+                placement_params,
+                placement,
+                plan,
+                latency,
+                access_meta,
+                invocation_start_ns,
+            )
             
             if res:
                 self.success += 1
@@ -88,6 +100,8 @@ class Benchmark:
         self.print_stats(total_time, latencies)
         if self.name and 'trace' in self.name:
             bench_util.save_detailed_latency(latencies, os.path.join(self.result_dir, "temp_detailed.csv"))
+        self.invocation_logger.flush_to_file()
+        self.invocation_logger.close()
 
     # Helper function to print stats
     def print_stats(self, total_time, latencies):
@@ -108,8 +122,10 @@ class Benchmark:
         """Return low-cost invocation parameters used to solve registered RPN."""
         return {}
 
-    def log_invocation(self, invocation_id, params, placement, plan, latency):
-        if not self.invocation_logger.is_enabled():
+    def log_invocation(self, invocation_id, params, placement, plan, latency, access_meta, invocation_start_ns):
+        logger_enabled = self.invocation_logger.is_enabled()
+        async_profiler_enabled = bench_util.async_profiler_enabled()
+        if not logger_enabled and not async_profiler_enabled:
             return
 
         selected_side = {
@@ -119,8 +135,19 @@ class Benchmark:
         }.get(placement, placement)
         fallback_phase = plan.reason if getattr(plan, "fallback_active", False) else ""
         reason = "fallback" if getattr(plan, "fallback_active", False) else plan.arbiter_reason
+        predicted_ns = int((getattr(plan, "expected_us", 0.0) or 0.0) * 1000.0)
+        actual_ns = int(latency * 1e9)
+        access_record = access_meta.as_dict()
         record = {
+            "func_id": self.name,
+            "side": selected_side,
+            "predicted_ns": predicted_ns,
+            "actual_ns": actual_ns,
+            "estimated_ad": plan.access_depth,
+            "trigger_used": bool(getattr(plan, "trigger_check_us", 0.0)),
+            "fallback_used": bool(getattr(plan, "fallback_active", False)),
             "invocation_id": invocation_id,
+            "invocation_start_ns": invocation_start_ns,
             "function_name": self.name,
             "function_id": self.name,
             "placement_params": params,
@@ -141,7 +168,11 @@ class Benchmark:
             "trigger_check_us": plan.trigger_check_us,
             "ast_analysis_us": plan.ast_analysis_us,
         }
-        self.invocation_logger.write(record)
+        record.update(access_record)
+        if logger_enabled:
+            self.invocation_logger.write(record)
+        if async_profiler_enabled:
+            bench_util.async_profiler_record_fast(record)
 
     def default_plan(self, placement):
         return SimpleNamespace(

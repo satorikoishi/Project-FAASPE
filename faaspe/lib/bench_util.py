@@ -5,7 +5,7 @@ import csv
 import random
 import time
 from arbiter import get_arbiter
-from profiler import get_profiler
+from profiler import get_async_profiler, get_profiler
 
 
 _LAST_PROFILER_UPDATE_US = 0.0
@@ -130,4 +130,10 @@ def profiler_snapshot(strategy, function_name):
 
 def profiler_last_plan():
     return get_profiler().last_plan()
+
+def async_profiler_enabled():
+    return get_async_profiler().enabled
+
+def async_profiler_record_fast(record):
+    get_async_profiler().record_fast(record)
         

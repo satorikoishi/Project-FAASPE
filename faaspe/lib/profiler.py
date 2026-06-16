@@ -1,5 +1,7 @@
 import os
+import queue
 import statistics
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -242,6 +244,7 @@ class Profiler:
 
 
 _PROFILER = None
+_ASYNC_PROFILER = None
 
 
 def get_profiler():
@@ -249,3 +252,56 @@ def get_profiler():
     if _PROFILER is None:
         _PROFILER = Profiler.from_env()
     return _PROFILER
+
+
+class AsyncProfiler:
+    def __init__(self, enabled=False, queue_size=4096, history_limit=10000):
+        self.enabled = enabled
+        self.queue = queue.Queue(maxsize=queue_size)
+        self.records = deque(maxlen=history_limit)
+        self.dropped = 0
+        self._stop = False
+        self._thread = None
+        if self.enabled:
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+
+    @classmethod
+    def from_env(cls):
+        return cls(
+            enabled=os.getenv("FAASPE_ASYNC_PROFILER_ENABLED", "0") != "0",
+            queue_size=int(os.getenv("FAASPE_ASYNC_PROFILER_QUEUE_SIZE", 4096)),
+            history_limit=int(os.getenv("FAASPE_ASYNC_PROFILER_HISTORY_LIMIT", 10000)),
+        )
+
+    def record_fast(self, record):
+        if not self.enabled:
+            return
+        try:
+            self.queue.put_nowait(record)
+        except queue.Full:
+            self.dropped += 1
+
+    def snapshot(self):
+        return list(self.records)
+
+    def close(self):
+        self._stop = True
+        if self._thread is not None:
+            self._thread.join(timeout=0.1)
+
+    def _run(self):
+        while not self._stop:
+            try:
+                record = self.queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            self.records.append(record)
+            self.queue.task_done()
+
+
+def get_async_profiler():
+    global _ASYNC_PROFILER
+    if _ASYNC_PROFILER is None:
+        _ASYNC_PROFILER = AsyncProfiler.from_env()
+    return _ASYNC_PROFILER

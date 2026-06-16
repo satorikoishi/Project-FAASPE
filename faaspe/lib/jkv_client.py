@@ -1,5 +1,6 @@
 import jkv_pb2
 import zmq
+from access_meta import JKVAccessMeta, estimate_object_size, object_size_bucket, record_jkv_access
 
 class JKVClient:
     def __init__(self, server_recv_addr, server_send_addr):
@@ -27,6 +28,14 @@ class JKVClient:
         req.client_id = client_id
 
         res = self._send_request(req)
+        size = estimate_object_size(value)
+        record_jkv_access(
+            JKVAccessMeta(
+                op="put",
+                object_size=size,
+                object_size_bucket=object_size_bucket(size),
+            )
+        )
         return res.ok
 
     def get(self, key, client_id="1"):
@@ -36,6 +45,15 @@ class JKVClient:
         req.client_id = client_id
 
         res = self._send_request(req)
+        size = estimate_object_size(res.payload.value) if res.ok else -1
+        record_jkv_access(
+            JKVAccessMeta(
+                op="get",
+                cache_hit=None,
+                object_size=size,
+                object_size_bucket=object_size_bucket(size),
+            )
+        )
         return res.payload.value, res.payload.version, res.ok
     
     def func(self, func_name, params, client_id="1"):
@@ -46,6 +64,7 @@ class JKVClient:
         req.client_id = client_id
         
         res = self._send_request(req)
+        record_jkv_access(JKVAccessMeta(op="func"))
         return res.ok
     
     def begin_txn(self, client_id):
