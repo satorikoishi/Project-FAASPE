@@ -45,6 +45,52 @@ class FunctionProfile:
     history: dict = field(default_factory=lambda: {"native": deque(), "func": deque()})
 
 
+@dataclass
+class AsyncBucketState:
+    records: deque
+    diagnosed_causes: set = field(default_factory=set)
+    update_emitted: bool = False
+
+
+@dataclass
+class PolicyUpdate:
+    bucket_key: tuple
+    func_id: str
+    side: str
+    median_actual_ns: float
+    median_predicted_ns: float
+    diagnosis: tuple
+    record_count: int
+
+
+def env_enabled(name, default="0"):
+    return os.getenv(name, default) not in {"", "0", "false", "False", "no", "off"}
+
+
+def profile_enabled():
+    if "FAASPE_PROFILE_ENABLED" in os.environ:
+        return env_enabled("FAASPE_PROFILE_ENABLED", "1")
+    return env_enabled("FAASPE_PROFILER_ENABLED", "1")
+
+
+def access_depth_bucket(value):
+    if value is None:
+        return "unknown"
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return "unknown"
+    if value <= 1:
+        return "ad_le1"
+    if value <= 2:
+        return "ad_le2"
+    if value <= 4:
+        return "ad_le4"
+    if value <= 8:
+        return "ad_le8"
+    return "ad_gt8"
+
+
 class Profiler:
     """Runtime feedback and fallback profiler for FAASPE placement.
 
@@ -80,7 +126,7 @@ class Profiler:
     @classmethod
     def from_env(cls):
         return cls(
-            enabled=os.getenv("FAASPE_PROFILER_ENABLED", "1") != "0",
+            enabled=profile_enabled(),
             violation_factor=float(os.getenv("FAASPE_PROFILER_VIOLATION_FACTOR", 1.5)),
             violation_window=int(os.getenv("FAASPE_PROFILER_VIOLATION_WINDOW", 20)),
             violation_limit=int(os.getenv("FAASPE_PROFILER_VIOLATION_LIMIT", 3)),
@@ -255,23 +301,48 @@ def get_profiler():
 
 
 class AsyncProfiler:
-    def __init__(self, enabled=False, queue_size=4096, history_limit=10000):
+    def __init__(
+        self,
+        enabled=False,
+        queue_size=4096,
+        history_limit=10000,
+        bucket_limit=64,
+        min_records=8,
+        residual_factor=1.25,
+        residual_min_ns=100000,
+        start_worker=True,
+    ):
         self.enabled = enabled
         self.queue = queue.Queue(maxsize=queue_size)
         self.records = deque(maxlen=history_limit)
+        self.buckets = {}
+        self.bucket_limit = bucket_limit
+        self.min_records = min_records
+        self.residual_factor = residual_factor
+        self.residual_min_ns = residual_min_ns
+        self.policy_updates = deque(maxlen=1024)
         self.dropped = 0
         self._stop = False
         self._thread = None
-        if self.enabled:
+        self._policy_callback = None
+        if self.enabled and start_worker:
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
 
     @classmethod
     def from_env(cls):
+        async_enabled = env_enabled(
+            "FAASPE_PROFILE_ASYNC_ENABLED",
+            os.getenv("FAASPE_ASYNC_PROFILER_ENABLED", "0"),
+        )
         return cls(
-            enabled=os.getenv("FAASPE_ASYNC_PROFILER_ENABLED", "0") != "0",
-            queue_size=int(os.getenv("FAASPE_ASYNC_PROFILER_QUEUE_SIZE", 4096)),
-            history_limit=int(os.getenv("FAASPE_ASYNC_PROFILER_HISTORY_LIMIT", 10000)),
+            enabled=profile_enabled() and async_enabled,
+            queue_size=int(os.getenv("FAASPE_PROFILE_ASYNC_QUEUE_SIZE", os.getenv("FAASPE_ASYNC_PROFILER_QUEUE_SIZE", 4096))),
+            history_limit=int(os.getenv("FAASPE_PROFILE_ASYNC_HISTORY_LIMIT", os.getenv("FAASPE_ASYNC_PROFILER_HISTORY_LIMIT", 10000))),
+            bucket_limit=int(os.getenv("FAASPE_PROFILE_ASYNC_BUCKET_LIMIT", 64)),
+            min_records=int(os.getenv("FAASPE_PROFILE_RESIDUAL_MIN_RECORDS", 8)),
+            residual_factor=float(os.getenv("FAASPE_PROFILE_RESIDUAL_FACTOR", 1.25)),
+            residual_min_ns=int(os.getenv("FAASPE_PROFILE_RESIDUAL_MIN_NS", 100000)),
         )
 
     def record_fast(self, record):
@@ -285,6 +356,22 @@ class AsyncProfiler:
     def snapshot(self):
         return list(self.records)
 
+    def bucket_snapshot(self):
+        return {
+            key: {
+                "count": len(state.records),
+                "diagnosed_causes": sorted(state.diagnosed_causes),
+                "update_emitted": state.update_emitted,
+            }
+            for key, state in self.buckets.items()
+        }
+
+    def policy_update_snapshot(self):
+        return list(self.policy_updates)
+
+    def set_policy_callback(self, callback):
+        self._policy_callback = callback
+
     def close(self):
         self._stop = True
         if self._thread is not None:
@@ -296,8 +383,84 @@ class AsyncProfiler:
                 record = self.queue.get(timeout=0.1)
             except queue.Empty:
                 continue
-            self.records.append(record)
+            self.consume(record)
             self.queue.task_done()
+
+    def consume(self, record):
+        self.records.append(record)
+        key = self._bucket_key(record)
+        state = self.buckets.get(key)
+        if state is None:
+            state = AsyncBucketState(records=deque(maxlen=self.bucket_limit))
+            self.buckets[key] = state
+        state.records.append(record)
+        for cause in self._diagnose(record):
+            state.diagnosed_causes.add(cause)
+        self._maybe_emit_policy_update(key, state)
+
+    def _bucket_key(self, record):
+        return (
+            record.get("func_id") or record.get("function_id") or "",
+            record.get("side") or record.get("selected_side") or "",
+            access_depth_bucket(
+                record.get("estimated_ad", record.get("estimated_access_depth"))
+            ),
+            record.get("object_size_bucket") or "unknown",
+            record.get("cache_state") or "unknown",
+        )
+
+    def _diagnose(self, record):
+        causes = []
+        if int(record.get("cache_misses") or 0) > 0:
+            causes.append("cold access or cache locality changed")
+        if int(record.get("max_object_size") or -1) > 100 * 1024:
+            causes.append("large object transfer")
+        estimated_ad = record.get("estimated_ad", record.get("estimated_access_depth"))
+        try:
+            estimated_ad = int(round(float(estimated_ad)))
+        except (TypeError, ValueError):
+            estimated_ad = None
+        actual_accesses = int(record.get("get_count") or 0) + int(record.get("put_count") or 0)
+        if estimated_ad is not None and actual_accesses != estimated_ad:
+            causes.append("access-depth prediction error")
+        actual_ns = int(record.get("actual_ns") or 0)
+        if (
+            (record.get("side") or record.get("selected_side")) == "storage"
+            and record.get("object_size_bucket", "unknown") == "unknown"
+            and actual_ns > 1000000
+        ):
+            causes.append("possible storage-side load or FUNC queue delay")
+        return causes
+
+    def _maybe_emit_policy_update(self, key, state):
+        if state.update_emitted or len(state.records) < self.min_records:
+            return
+        predicted = [int(r.get("predicted_ns") or 0) for r in state.records]
+        actual = [int(r.get("actual_ns") or 0) for r in state.records]
+        predicted = [value for value in predicted if value > 0]
+        actual = [value for value in actual if value > 0]
+        if len(predicted) < self.min_records or len(actual) < self.min_records:
+            return
+
+        median_predicted = statistics.median(predicted)
+        median_actual = statistics.median(actual)
+        if (
+            median_actual > self.residual_factor * median_predicted
+            and median_actual - median_predicted > self.residual_min_ns
+        ):
+            update = PolicyUpdate(
+                bucket_key=key,
+                func_id=key[0],
+                side=key[1],
+                median_actual_ns=median_actual,
+                median_predicted_ns=median_predicted,
+                diagnosis=tuple(sorted(state.diagnosed_causes)),
+                record_count=len(state.records),
+            )
+            self.policy_updates.append(update)
+            state.update_emitted = True
+            if self._policy_callback is not None:
+                self._policy_callback(update)
 
 
 def get_async_profiler():

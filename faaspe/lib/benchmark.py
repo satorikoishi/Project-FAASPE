@@ -6,7 +6,11 @@ import logging
 import random
 from typing import Callable
 from types import SimpleNamespace
-from access_meta import reset_invocation_access_meta, snapshot_invocation_access_meta
+from access_meta import (
+    clear_invocation_access_meta,
+    reset_invocation_access_meta,
+    snapshot_invocation_access_meta,
+)
 from invocation_log import get_invocation_logger
 
 # General Benchmarking Class to measure latency and throughput
@@ -41,7 +45,10 @@ class Benchmark:
         # Perform the operations (GET/PUT, or any custom workload)
         for i in range(self.num_operations):
             invocation_start_ns = time.perf_counter_ns()
-            reset_invocation_access_meta()
+            if bench_util.profile_sample_selected():
+                reset_invocation_access_meta()
+            else:
+                clear_invocation_access_meta()
             # Prepare input for i-th op
             op_input = self.prepare_input(i)
             placement_params = self.arbiter_params(op_input)

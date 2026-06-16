@@ -5,10 +5,20 @@ import csv
 import random
 import time
 from arbiter import get_arbiter
-from profiler import get_async_profiler, get_profiler
+from profiler import get_async_profiler, get_profiler, profile_enabled
 
 
 _LAST_PROFILER_UPDATE_US = 0.0
+_ASYNC_POLICY_CALLBACK_ATTACHED = False
+
+
+def _async_profiler():
+    global _ASYNC_POLICY_CALLBACK_ATTACHED
+    profiler = get_async_profiler()
+    if profiler.enabled and not _ASYNC_POLICY_CALLBACK_ATTACHED:
+        profiler.set_policy_callback(get_arbiter().receive_policy_update)
+        _ASYNC_POLICY_CALLBACK_ATTACHED = True
+    return profiler
 
 def print_latency_stats(results, latencies, operation_type=""):
     """Prints various latency statistics for a given list of latencies."""
@@ -132,8 +142,21 @@ def profiler_last_plan():
     return get_profiler().last_plan()
 
 def async_profiler_enabled():
-    return get_async_profiler().enabled
+    return _async_profiler().enabled
 
 def async_profiler_record_fast(record):
-    get_async_profiler().record_fast(record)
+    _async_profiler().record_fast(record)
+
+def metadata_collection_enabled():
+    return profile_enabled()
+
+def profile_sample_selected():
+    if not metadata_collection_enabled():
+        return False
+    sample_rate = float(os.getenv("FAASPE_PROFILE_SAMPLE_RATE", "1.0"))
+    if sample_rate <= 0:
+        return False
+    if sample_rate >= 1:
+        return True
+    return random.random() < sample_rate
         

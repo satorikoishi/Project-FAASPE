@@ -136,6 +136,10 @@ def reset_invocation_access_meta():
     return meta
 
 
+def clear_invocation_access_meta():
+    _CURRENT_ACCESS_META.set(None)
+
+
 def current_invocation_access_meta():
     return _CURRENT_ACCESS_META.get()
 

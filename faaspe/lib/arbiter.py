@@ -110,6 +110,7 @@ class Arbiter:
         )
         self.unknown_default = os.getenv("FAASPE_UNKNOWN_PLACEMENT", unknown_default)
         self.last_overhead_us = 0.0
+        self.policy_updates = []
 
     @classmethod
     def from_env(cls, manifest_path=None):
@@ -214,6 +215,12 @@ class Arbiter:
         if placement == "func":
             return self.storage_func_us + float(params.get("storage_load_us", 0) or 0)
         return None
+
+    def receive_policy_update(self, update):
+        self.policy_updates.append(update)
+
+    def policy_update_snapshot(self):
+        return list(self.policy_updates)
 
     def _object_size(self, params):
         return int(float(params.get("object_size", 0) or 0))
