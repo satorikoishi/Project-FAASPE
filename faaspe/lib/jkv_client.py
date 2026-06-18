@@ -30,6 +30,17 @@ class JKVClient:
         res = jkv_pb2.Response()
         res.ParseFromString(response)
         return res
+
+    def heartbeat(self, sequence, extra_load_us=0, client_id="heartbeat"):
+        req = jkv_pb2.Request()
+        req.reqtype = jkv_pb2.Request.PING
+        req.key = f"HEARTBEAT:{sequence}"
+        req.payload.value = str(int(extra_load_us))
+        req.payload.version = int(sequence)
+        req.client_id = client_id
+
+        res = self._send_request(req)
+        return res.ok, res.key
     
     def put(self, key, value, version, client_id="1"):
         req = jkv_pb2.Request()

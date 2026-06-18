@@ -1,8 +1,29 @@
 #include "zmq_server.h"
 #include <zmq.hpp>
+#include <chrono>
 #include <thread>
 #include "jkv.pb.h"
 #include "util/config.hpp"
+
+namespace {
+constexpr const char* HEARTBEAT_PREFIX = "HEARTBEAT:";
+
+bool is_heartbeat_key(const std::string& key) {
+    return key.rfind(HEARTBEAT_PREFIX, 0) == 0;
+}
+
+int64_t parse_extra_load_us(const Request& request) {
+    if (!request.has_payload() || request.payload().value().empty()) {
+        return 0;
+    }
+    try {
+        return std::stoll(request.payload().value());
+    } catch (...) {
+        spdlog::warn("Invalid heartbeat extra load: {}", request.payload().value());
+        return 0;
+    }
+}
+}
 
 ZMQServer::ZMQServer(AbstractKVStore& store, const std::string& send_addr, const std::string& recv_addr)
     : store_(store),
@@ -70,6 +91,28 @@ void ZMQServer::SendResponse(Response& response) {
 }
 
 void ZMQServer::ProcessPing(const Request& request) {
+    if (is_heartbeat_key(request.key())) {
+        int64_t extra_load_us = parse_extra_load_us(request);
+        if (extra_load_us > 0) {
+            std::this_thread::sleep_for(std::chrono::microseconds(extra_load_us));
+        }
+        spdlog::debug(
+            "Storage heartbeat key={} client={} requested_extra_load_us={}",
+            request.key(),
+            request.client_id(),
+            extra_load_us);
+        Response response;
+        zmqutil::build_response(
+            response,
+            Response::NONE,
+            request.key(),
+            std::make_pair(std::to_string(extra_load_us), request.payload().version()),
+            true,
+            request.client_id());
+        SendResponse(response);
+        return;
+    }
+
     Response response;
     response.set_key(request.key());
 

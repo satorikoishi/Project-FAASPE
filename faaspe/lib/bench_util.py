@@ -6,6 +6,7 @@ import random
 import time
 from arbiter import get_arbiter
 from profiler import get_async_profiler, get_profiler, profile_enabled
+from storage_heartbeat import get_storage_heartbeat_monitor
 
 
 _LAST_PROFILER_UPDATE_US = 0.0
@@ -91,6 +92,7 @@ def save_detailed_latency(latencies, output_filename):
 # Strategy: local, remote, kayak, asfp, faaspe
 # Placement: native, func, pushback(func + native)
 def strategy_placement(s, function_name=None, params=None):
+    params = params or {}
     if s == 'local':
         return 'native'
     elif s == 'remote':
@@ -106,9 +108,20 @@ def strategy_placement(s, function_name=None, params=None):
         else:
             return 'func'
     elif s == 'faaspe':
+        params = params_with_storage_load(params)
         return get_profiler().choose(function_name, params, get_arbiter()).placement
     else:
         raise ValueError('Unknown Strategy')
+
+def params_with_storage_load(params):
+    params = params or {}
+    monitor = get_storage_heartbeat_monitor()
+    storage_load_us = monitor.latest_load_us()
+    if storage_load_us <= 0:
+        return params
+    updated = dict(params)
+    updated['storage_load_us'] = storage_load_us
+    return updated
 
 def arbiter_overhead_us():
     return get_arbiter().last_overhead_us
@@ -130,12 +143,21 @@ def profiler_update_overhead_us():
 
 def profiler_snapshot(strategy, function_name):
     if strategy == 'faaspe':
-        return get_profiler().snapshot(function_name)
+        snapshot = get_profiler().snapshot(function_name)
+        snapshot.update(get_storage_heartbeat_monitor().snapshot())
+        return snapshot
     return {
         "profiler_fallback_count": 0,
         "profiler_fallback_invocations": 0,
         "profiler_recheck_count": 0,
         "profiler_override": "",
+        "storage_heartbeat_enabled": 0,
+        "storage_heartbeat_interval_ms": 0,
+        "storage_heartbeat_trace": "",
+        "storage_heartbeat_requested_load_us": 0,
+        "storage_heartbeat_observed_latency_us": 0.0,
+        "storage_heartbeat_estimated_load_us": 0.0,
+        "storage_heartbeat_samples": 0,
     }
 
 def profiler_last_plan():

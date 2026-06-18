@@ -22,6 +22,17 @@ bool KVClient::put_async(const Key_t& key, const ValueWithVersion_t& value, cons
     return true;
 }
 
+bool KVClient::ping_async(const Key_t& key, const std::string& payload, uint64_t version, const std::string& client_id) {
+    Request request;
+    std::optional<ValueWithVersion_t> value_version = std::nullopt;
+    if (!payload.empty() || version != 0) {
+        value_version = std::make_pair(payload, version);
+    }
+    zmqutil::build_request(request, Request::PING, key, value_version, client_id);
+    zmqutil::send_msg(request, send_socket_);
+    return true;
+}
+
 bool KVClient::validate_async(const KVVMap_t& read_set, const KVVMap_t& write_set, const std::string& client_id) {
     Request request;
     zmqutil::build_request(request, Request::VALIDATE, "", std::nullopt, client_id);

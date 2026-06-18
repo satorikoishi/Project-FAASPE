@@ -1,5 +1,13 @@
 #include "occ_cache.h"
 
+namespace {
+constexpr const char* HEARTBEAT_PREFIX = "HEARTBEAT:";
+
+bool is_heartbeat_key(const std::string& key) {
+    return key.rfind(HEARTBEAT_PREFIX, 0) == 0;
+}
+}
+
 OCCCacheServer::OCCCacheServer(const std::string& cache_send_port, 
                         const std::string& cache_recv_port,
                         const std::string& kvs_send_port,
@@ -43,6 +51,15 @@ void OCCCacheServer::ProcessUserRequest(const Request& req) {
     // Handle the different request types (PING, PUT, GET)
     switch (req.reqtype()) {
         case Request::PING: {
+            if (is_heartbeat_key(req.key())) {
+                spdlog::debug("Forward heartbeat {} to KVS", req.key());
+                kv_client_.ping_async(
+                    req.key(),
+                    req.has_payload() ? req.payload().value() : "",
+                    req.has_payload() ? req.payload().version() : 0,
+                    req.client_id());
+                break;
+            }
             // Handle the PING request: just reply back
             spdlog::debug("Received PING request from client: {}", req.client_id());
             Response response;
@@ -146,6 +163,15 @@ void OCCCacheServer::ProcessUserRequest(const Request& req) {
 
 void OCCCacheServer::ProcessKVResponse(const Response& resp) {
     switch (resp.resptype()) {
+        case Response::NONE: {
+            if (is_heartbeat_key(resp.key())) {
+                zmqutil::send_msg(resp, send_socket_);
+                spdlog::debug("Forward heartbeat {} response", resp.key());
+            } else {
+                spdlog::error("Received unsupported NONE response from kvs: {}", resp.key());
+            }
+            break;
+        }
         case Response::PUT: {
             // Raw PUT case only
             if (!resp.ok()) {

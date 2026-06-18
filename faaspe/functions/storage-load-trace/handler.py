@@ -32,6 +32,10 @@ class StorageLoadTrace(Benchmark):
 
     def arbiter_params(self, op_input):
         _, depth, storage_loaded = op_input
+        if os.getenv("FAASPE_STORAGE_LOAD_FROM_HEARTBEAT", "0") == "1":
+            return {
+                'depth': depth,
+            }
         return {
             'depth': depth,
             'storage_load_us': 2000 if storage_loaded else 0,

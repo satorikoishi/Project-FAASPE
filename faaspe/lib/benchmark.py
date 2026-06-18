@@ -52,6 +52,8 @@ class Benchmark:
             # Prepare input for i-th op
             op_input = self.prepare_input(i)
             placement_params = self.arbiter_params(op_input)
+            if self.strategy == 'faaspe':
+                placement_params = bench_util.params_with_storage_load(placement_params)
             placement = bench_util.strategy_placement(self.strategy, self.name, placement_params)
             if placement in self.placement_counts:
                 self.placement_counts[placement] += 1

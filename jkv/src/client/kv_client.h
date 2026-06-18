@@ -13,6 +13,7 @@ public:
 
     bool get_async(const Key_t& key, const std::string& client_id="none");
     bool put_async(const Key_t& key, const ValueWithVersion_t& value, const std::string& client_id="none");
+    bool ping_async(const Key_t& key="PING", const std::string& payload="", uint64_t version=0, const std::string& client_id="none");
     
     bool validate_async(const KVVMap_t& read_set, const KVVMap_t& write_set, const std::string& client_id="none");  // Only called by cache
     bool func_async(const std::string& func_name, const std::string& params, const std::string& client_id="none");  // Only called by cache
