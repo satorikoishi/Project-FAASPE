@@ -46,6 +46,7 @@ class StorageHeartbeatMonitor:
         self._baseline_latency_us = None
         self._sample_count = 0
         self._sequence = 0
+        self._client = None
         self._thread = None
         self._stop = False
 
@@ -62,10 +63,19 @@ class StorageHeartbeatMonitor:
     def start(self):
         if not self.enabled or self._thread is not None:
             return
-        if not self.push_addr or not self.pull_addr:
+        if self._client is None and (not self.push_addr or not self.pull_addr):
             return
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+
+    def attach_client(self, client):
+        """Use the workload JKV client so heartbeat responses cannot be stolen."""
+        if client is None:
+            return
+        with self._lock:
+            if self._client is None:
+                self._client = client
+        self.start()
 
     def latest_load_us(self):
         self.start()
@@ -101,7 +111,7 @@ class StorageHeartbeatMonitor:
             }
 
     def _run(self):
-        client = JKVClient(self.push_addr, self.pull_addr)
+        client = self._client or JKVClient(self.push_addr, self.pull_addr)
         trace_start = time.monotonic()
         while not self._stop:
             requested = self._current_extra_load_us(trace_start)

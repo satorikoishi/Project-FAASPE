@@ -32,6 +32,8 @@ class Benchmark:
         self.init_kvs()
         if access == 'cold':
             self.client.clear()
+        if self.strategy == 'faaspe':
+            bench_util.attach_storage_heartbeat_client(self.client)
 
     # ping-pong loop, we should only get latency, not tput
     def measure(self):

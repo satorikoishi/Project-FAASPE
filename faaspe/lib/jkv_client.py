@@ -1,4 +1,5 @@
 import jkv_pb2
+import threading
 import zmq
 from access_meta import JKVAccessMeta, estimate_object_size, object_size_bucket, record_jkv_access
 
@@ -16,6 +17,7 @@ class JKVClient:
         self.context = zmq.Context()
         self.send_socket = self.context.socket(zmq.PUSH)  # To send requests
         self.recv_socket = self.context.socket(zmq.PULL)  # To receive responses
+        self._request_lock = threading.Lock()
         self.last_get_trigger_used = False
         self.last_get_response_type = None
         self.last_get_trigger_func_name = ""
@@ -25,8 +27,9 @@ class JKVClient:
         print(f"KVClient connects to {server_send_addr} for PULL")
     
     def _send_request(self, req):
-        self.send_socket.send(req.SerializeToString())
-        response = self.recv_socket.recv()
+        with self._request_lock:
+            self.send_socket.send(req.SerializeToString())
+            response = self.recv_socket.recv()
         res = jkv_pb2.Response()
         res.ParseFromString(response)
         return res

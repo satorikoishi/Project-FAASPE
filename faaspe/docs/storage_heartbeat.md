@@ -9,6 +9,13 @@ thread periodically sends a lightweight `PING` request with key
 contains an emulated extra delay in microseconds. The JKV server sleeps for that
 delay and returns a small response without reading or writing object data.
 
+In benchmark runs, the heartbeat thread reuses the workload's existing
+`JKVClient` connection and serializes request/response pairs with a small
+client-side lock. The current JKV/cache transport uses ZMQ `PUSH/PULL` sockets
+and does not route responses to a specific client, so using a separate heartbeat
+client would allow heartbeat and workload responses to be delivered to the wrong
+receiver.
+
 ## Configuration
 
 Enable heartbeat collection in the function container environment:

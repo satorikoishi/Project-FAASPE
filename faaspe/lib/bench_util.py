@@ -123,6 +123,9 @@ def params_with_storage_load(params):
     updated['storage_load_us'] = storage_load_us
     return updated
 
+def attach_storage_heartbeat_client(client):
+    get_storage_heartbeat_monitor().attach_client(client)
+
 def arbiter_overhead_us():
     return get_arbiter().last_overhead_us
 
