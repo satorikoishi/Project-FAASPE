@@ -276,7 +276,7 @@ def main():
     parser.add_argument("--value-sizes", default="1024")
     parser.add_argument("--object-sizes", default=DEFAULT_OBJECT_SIZES)
     parser.add_argument("--object-size-margin", type=float, default=0.05)
-    parser.add_argument("--default-object-size-threshold", type=int, default=1024 * 1024)
+    parser.add_argument("--default-object-size-threshold", type=int, default=102400)
     parser.add_argument("--trigger-func-name", default="NONE")
     parser.add_argument("--trigger-sanity-threshold", type=int, default=0)
     parser.add_argument("--sanity-samples", type=int, default=100)

@@ -56,7 +56,7 @@ public:
         if (env_threshold) {
             return std::stoll(env_threshold);
         }
-        return static_cast<int64_t>(read_optional_int("object_size_trigger_threshold_bytes", 1024 * 1024));
+        return static_cast<int64_t>(read_optional_int("object_size_trigger_threshold_bytes", 102400));
     }
 
     static inline std::string object_size_trigger_func_name() {
