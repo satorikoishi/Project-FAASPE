@@ -1,6 +1,7 @@
 import argparse
 import csv
 import json
+import statistics
 from datetime import datetime
 
 from fabric import Connection
@@ -10,6 +11,7 @@ import runner
 
 FUNC_NAME = "placement-calibration"
 DEFAULT_OBJECT_SIZES = "1024,4096,10240,32768,65536,102400,262144,524288,1048576,2097152"
+DEFAULT_DEPTHS = "1,2,3,4,8"
 
 
 def latest_rows(path):
@@ -69,6 +71,63 @@ def summarize_object_size(rows, margin):
     return recommended, summary_rows
 
 
+def median_float(values):
+    values = [float(value) for value in values if value not in ("", None)]
+    return statistics.median(values) if values else 0.0
+
+
+def build_latency_model(depth_rows, object_rows, linear_start_depth):
+    small_depths = {}
+    by_depth = {}
+    for row in depth_rows:
+        if row.get("operation") != "cache_depth":
+            continue
+        depth = int(float(row.get("depth", 0) or 0))
+        if 0 < depth < linear_start_depth:
+            by_depth.setdefault(depth, []).append(row.get("median_us"))
+    for depth in sorted(by_depth):
+        small_depths[str(depth)] = median_float(by_depth[depth])
+
+    object_buckets = []
+    for row in object_rows:
+        if row.get("operation") != "object_size_get" or row.get("variant") != "cache":
+            continue
+        object_buckets.append(
+            {
+                "max_bytes": int(row["object_size"]),
+                "latency_us": float(row["median_us"]),
+            }
+        )
+    object_buckets.sort(key=lambda bucket: bucket["max_bytes"])
+
+    storage_base_candidates = [
+        row.get("median_us")
+        for row in depth_rows
+        if row.get("operation") == "storage_func_get"
+    ]
+    if not storage_base_candidates:
+        storage_base_candidates = [
+            row.get("median_us")
+            for row in object_rows
+            if row.get("operation") == "object_size_get" and row.get("variant") == "storage"
+        ]
+
+    return {
+        "linear_start_depth": int(linear_start_depth),
+        "small_depth_cache_latency_us": small_depths,
+        "cache_object_size_latency_us": object_buckets,
+        "storage_base_latency_us": median_float(storage_base_candidates),
+    }
+
+
+def write_latency_model(output_dir, model):
+    path = output_dir / "placement_latency_model.json"
+    with open(path, "w") as f:
+        json.dump(model, f, indent=2, sort_keys=True)
+        f.write("\n")
+    return path
+
+
 def summarize_trigger_effect(object_summary_rows, sanity_rows):
     sanity_by_size = {}
     for row in sanity_rows:
@@ -118,6 +177,11 @@ def write_recommendations(output_dir, recommendations):
     depth = recommendations.get("storage_depth_threshold")
     if depth:
         lines.append(f"FAASPE_STORAGE_DEPTH_THRESHOLD={depth}")
+    if recommendations.get("placement_latency_model_file"):
+        lines.append(
+            "FAASPE_PLACEMENT_LATENCY_MODEL="
+            f"{recommendations['placement_latency_model_env_path']}"
+        )
     lines.extend(
         [
             "JKV_OBJECT_SIZE_TRIGGER_ENABLED=1",
@@ -157,6 +221,7 @@ def run_calibration(args):
         "RUN_DEPTH_CALIBRATION": "1",
         "RUN_OBJECT_SIZE_CALIBRATION": "0",
         "RUN_OBJECT_SIZE_TRIGGER_SANITY": "0",
+        "FAASPE_STORAGE_HEARTBEAT_ENABLED": "0",
         "FAASPE_RESULT_DIR": container_result_dir,
         "_local_dir": output_name,
         "_local_file_name": "depth_calibration.csv",
@@ -188,6 +253,7 @@ def run_calibration(args):
         "RUN_DEPTH_CALIBRATION": "0",
         "RUN_OBJECT_SIZE_CALIBRATION": "1",
         "RUN_OBJECT_SIZE_TRIGGER_SANITY": "0",
+        "FAASPE_STORAGE_HEARTBEAT_ENABLED": "0",
         "FAASPE_RESULT_DIR": container_result_dir,
         "_local_dir": output_name,
         "_local_file_name": "object_size_calibration.csv",
@@ -198,6 +264,12 @@ def run_calibration(args):
     object_csv_path = output_dir / "object_size_calibration.csv"
     object_rows = latest_rows(object_csv_path)
     crossover, object_summary_rows = summarize_object_size(object_rows, args.object_size_margin)
+    latency_model = build_latency_model(
+        depth_rows,
+        object_rows,
+        args.linear_start_depth,
+    )
+    latency_model_path = write_latency_model(output_dir, latency_model)
 
     threshold = crossover
     if threshold is None:
@@ -224,6 +296,7 @@ def run_calibration(args):
             "RUN_DEPTH_CALIBRATION": "0",
             "RUN_OBJECT_SIZE_CALIBRATION": "0",
             "RUN_OBJECT_SIZE_TRIGGER_SANITY": "1",
+            "FAASPE_STORAGE_HEARTBEAT_ENABLED": "0",
             "FAASPE_RESULT_DIR": container_result_dir,
             "_local_dir": output_name,
             "_local_file_name": local_file_name,
@@ -251,6 +324,9 @@ def run_calibration(args):
         "object_size_crossover_found": crossover is not None,
         "object_size_summary": object_summary_rows,
         "trigger_effect_summary_csv": str(trigger_effect_csv_path),
+        "placement_latency_model_file": str(latency_model_path),
+        "placement_latency_model_env_path": latency_model_path.name,
+        "placement_latency_model": latency_model,
     }
     write_recommendations(output_dir, recommendations)
     return {
@@ -258,6 +334,7 @@ def run_calibration(args):
         "object_size": object_csv_path,
         "sanity": sanity_csv_path,
         "trigger_effect_summary": trigger_effect_csv_path,
+        "placement_latency_model": latency_model_path,
         "recommendations_json": output_dir / "placement_calibration_recommendations.json",
         "recommendations_env": output_dir / "placement_calibration_recommendations.env",
     }
@@ -272,9 +349,10 @@ def main():
     )
     parser.add_argument("--samples", type=int, default=1000)
     parser.add_argument("--warmup", type=int, default=100)
-    parser.add_argument("--depths", default="1,2,4,8")
+    parser.add_argument("--depths", default=DEFAULT_DEPTHS)
     parser.add_argument("--value-sizes", default="1024")
     parser.add_argument("--object-sizes", default=DEFAULT_OBJECT_SIZES)
+    parser.add_argument("--linear-start-depth", type=int, default=4)
     parser.add_argument("--object-size-margin", type=float, default=0.05)
     parser.add_argument("--default-object-size-threshold", type=int, default=102400)
     parser.add_argument("--trigger-func-name", default="NONE")

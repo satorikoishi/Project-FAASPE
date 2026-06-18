@@ -17,6 +17,7 @@ DEFAULT_PROFILES = {
 }
 
 PROFILE_MANIFEST = "faaspe_rpn.json"
+LATENCY_MODEL_MANIFEST = "placement_latency_model.json"
 
 
 @dataclass
@@ -80,6 +81,78 @@ class RPNExpression:
             raise RPNError(f"invalid RPN parameter {token}: {params[token]}") from exc
 
 
+class PlacementLatencyModel:
+    def __init__(
+        self,
+        linear_start_depth=4,
+        small_depth_cache_latency_us=None,
+        cache_object_size_latency_us=None,
+        storage_base_latency_us=900.0,
+    ):
+        self.linear_start_depth = int(linear_start_depth)
+        self.small_depth_cache_latency_us = {
+            int(depth): float(latency)
+            for depth, latency in (small_depth_cache_latency_us or {}).items()
+        }
+        self.cache_object_size_latency_us = sorted(
+            [
+                {
+                    "max_bytes": int(bucket["max_bytes"]),
+                    "latency_us": float(bucket["latency_us"]),
+                }
+                for bucket in (cache_object_size_latency_us or [])
+                if "max_bytes" in bucket and "latency_us" in bucket
+            ],
+            key=lambda bucket: bucket["max_bytes"],
+        )
+        self.storage_base_latency_us = float(storage_base_latency_us)
+
+    @classmethod
+    def from_dict(cls, data):
+        data = data or {}
+        return cls(
+            linear_start_depth=data.get("linear_start_depth", 4),
+            small_depth_cache_latency_us=data.get("small_depth_cache_latency_us", {}),
+            cache_object_size_latency_us=data.get("cache_object_size_latency_us", []),
+            storage_base_latency_us=data.get("storage_base_latency_us", 900.0),
+        )
+
+    @classmethod
+    def default(cls, local_access_us=200.0, storage_base_latency_us=900.0):
+        return cls(
+            linear_start_depth=int(os.getenv("FAASPE_LINEAR_START_DEPTH", "4")),
+            small_depth_cache_latency_us={},
+            cache_object_size_latency_us=[
+                {
+                    "max_bytes": int(os.getenv("FAASPE_DEFAULT_OBJECT_SIZE_BYTES", str(1024 * 1024))),
+                    "latency_us": float(local_access_us),
+                }
+            ],
+            storage_base_latency_us=storage_base_latency_us,
+        )
+
+    def cache_object_latency_us(self, object_size):
+        object_size = int(object_size or 0)
+        if not self.cache_object_size_latency_us:
+            return 0.0
+        for bucket in self.cache_object_size_latency_us:
+            if object_size <= bucket["max_bytes"]:
+                return bucket["latency_us"]
+        return self.cache_object_size_latency_us[-1]["latency_us"]
+
+    def cache_latency_us(self, depth, object_size):
+        depth = float(depth or 0.0)
+        depth_key = int(depth)
+        if depth == depth_key and depth_key < self.linear_start_depth:
+            small_latency = self.small_depth_cache_latency_us.get(depth_key)
+            if small_latency is not None:
+                return small_latency
+        return depth * self.cache_object_latency_us(object_size)
+
+    def storage_latency_us(self, storage_load_us=0.0):
+        return self.storage_base_latency_us + float(storage_load_us or 0.0)
+
+
 class Arbiter:
     """Low-overhead placement arbiter driven by registered RPN profiles.
 
@@ -97,6 +170,7 @@ class Arbiter:
         storage_func_us=900.0,
         object_size_threshold=1024 * 1024,
         unknown_default="func",
+        latency_model=None,
     ):
         self.profiles = profiles or DEFAULT_PROFILES
         self.local_base_us = float(os.getenv("FAASPE_LOCAL_BASE_US", local_base_us))
@@ -109,6 +183,10 @@ class Arbiter:
         self.storage_depth_threshold = float(threshold) if threshold else None
         self.object_size_threshold = int(
             os.getenv("FAASPE_OBJECT_SIZE_THRESHOLD", object_size_threshold)
+        )
+        self.latency_model = latency_model or PlacementLatencyModel.default(
+            local_access_us=self.local_access_us,
+            storage_base_latency_us=self.storage_func_us,
         )
         self.unknown_default = os.getenv("FAASPE_UNKNOWN_PLACEMENT", unknown_default)
         self.last_overhead_us = 0.0
@@ -132,7 +210,22 @@ class Arbiter:
                 with open(candidate, "r") as f:
                     profiles.update(json.load(f))
 
-        return cls(profiles=profiles)
+        latency_model = cls._load_latency_model()
+        return cls(profiles=profiles, latency_model=latency_model)
+
+    @staticmethod
+    def _load_latency_model():
+        candidates = []
+        env_path = os.getenv("FAASPE_PLACEMENT_LATENCY_MODEL")
+        if env_path:
+            candidates.append(env_path)
+        candidates.append(LATENCY_MODEL_MANIFEST)
+
+        for candidate in candidates:
+            if candidate and os.path.exists(candidate):
+                with open(candidate, "r") as f:
+                    return PlacementLatencyModel.from_dict(json.load(f))
+        return None
 
     def decide(self, function_name, params=None):
         started = time.perf_counter()
@@ -163,15 +256,6 @@ class Arbiter:
             )
 
         object_size = self._object_size(params)
-        if object_size >= self.object_size_threshold:
-            return PlacementDecision(
-                "func",
-                "large_object_trigger",
-                object_size=object_size,
-                storage_latency_us=self.storage_func_us
-                + float(params.get("storage_load_us", 0) or 0),
-            )
-
         try:
             access_depth = RPNExpression(profile.get("rpn", "")).evaluate(params)
         except RPNError:
@@ -181,27 +265,15 @@ class Arbiter:
                 object_size=object_size,
             )
 
-        if (
-            self.storage_depth_threshold is not None
-            and access_depth >= self.storage_depth_threshold
-        ):
-            local_latency = self.local_base_us + access_depth * self.local_access_us
-            storage_latency = self.storage_func_us + float(params.get("storage_load_us", 0) or 0)
-            return PlacementDecision(
-                "func",
-                "calibrated_depth_threshold",
-                access_depth=access_depth,
-                object_size=object_size,
-                compute_latency_us=local_latency,
-                storage_latency_us=storage_latency,
-            )
-
-        local_latency = self.local_base_us + access_depth * self.local_access_us
-        storage_latency = self.storage_func_us + float(params.get("storage_load_us", 0) or 0)
-        if float(params.get("storage_load_us", 0) or 0) > 0 and local_latency <= storage_latency:
+        storage_load_us = float(params.get("storage_load_us", 0) or 0)
+        local_latency = self.latency_model.cache_latency_us(access_depth, object_size)
+        storage_latency = self.latency_model.storage_latency_us(storage_load_us)
+        if storage_load_us > 0 and local_latency <= storage_latency:
             reason = "storage_load"
+        elif object_size > 0:
+            reason = "latency_model_object_size"
         else:
-            reason = "access_depth_threshold"
+            reason = "latency_model_depth"
         return PlacementDecision(
             "native" if local_latency <= storage_latency else "func",
             reason,
@@ -228,9 +300,9 @@ class Arbiter:
             access_depth = self.access_depth(function_name, params)
             if access_depth is None:
                 return None
-            return self.local_base_us + access_depth * self.local_access_us
+            return self.latency_model.cache_latency_us(access_depth, self._object_size(params))
         if placement == "func":
-            return self.storage_func_us + float(params.get("storage_load_us", 0) or 0)
+            return self.latency_model.storage_latency_us(params.get("storage_load_us", 0))
         return None
 
     def receive_policy_update(self, update):
