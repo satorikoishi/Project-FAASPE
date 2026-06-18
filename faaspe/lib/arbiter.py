@@ -11,6 +11,7 @@ DEFAULT_PROFILES = {
     "data-size": {"rpn": "1"},
     "list-traversal": {"rpn": "depth"},
     "list-traversal-trace": {"rpn": "depth"},
+    "placement-matrix": {"rpn": "depth"},
     "storage-load-trace": {"rpn": "depth"},
     "ycsb": {"rpn": "1"},
     "ycsb-t": {"rpn": "2"},
@@ -215,6 +216,10 @@ class Arbiter:
 
     @staticmethod
     def _load_latency_model():
+        env_json = os.getenv("FAASPE_PLACEMENT_LATENCY_MODEL_JSON")
+        if env_json:
+            return PlacementLatencyModel.from_dict(json.loads(env_json))
+
         candidates = []
         env_path = os.getenv("FAASPE_PLACEMENT_LATENCY_MODEL")
         if env_path:
