@@ -2,8 +2,8 @@ from fabric import Connection
 from fabric.group import ThreadingGroup
 import threading
 import time
+import shlex
 from param_parser import *
-from pathlib import Path
 
 def remote_abs(path, home):
     if path.startswith("~/"):
@@ -31,7 +31,12 @@ def clear(remote_ip, f_name):
         with c.cd(REMOTE_FAASPE_DIR):
             c.run(f'python3 ./platform/cli.py delete {f_name}')
 
-def run_kvs(kvs_addr, home, stop_event, use_occ=False):
+def env_prefix(env):
+    if not env:
+        return ""
+    return " ".join(f"{key}={shlex.quote(str(value))}" for key, value in env.items()) + " "
+
+def run_kvs(kvs_addr, home, stop_event, use_occ=False, kvs_env=None):
     with Connection(kvs_addr) as c:
         print("Running server on remote machine...")
         with c.cd(REMOTE_JKV_DIR):
@@ -39,10 +44,11 @@ def run_kvs(kvs_addr, home, stop_event, use_occ=False):
             # home = c.run("echo $HOME").stdout.strip()
             c.put(str(FAASPE_DIR / 'config.ini'), f'{remote_abs(REMOTE_JKV_DIR, home)}/config/config.ini')
             # Run
+            prefix = env_prefix(kvs_env)
             if use_occ:
-                result = c.run('./build/occ_server', asynchronous=True)
+                result = c.run(f'{prefix}./build/occ_server', asynchronous=True)
             else:
-                result = c.run('./build/jkv_server', asynchronous=True)
+                result = c.run(f'{prefix}./build/jkv_server', asynchronous=True)
             # Wait for the stop_event to be set (signaled by client)
             stop_event.wait()
             print(f"Stopping KVS server on {kvs_addr}...")
@@ -51,7 +57,7 @@ def run_kvs(kvs_addr, home, stop_event, use_occ=False):
             else:
                 c.run(f"pkill jkv_server")
 
-def run_cache(cache_addr, home, stop_event, use_occ=False):
+def run_cache(cache_addr, home, stop_event, use_occ=False, cache_env=None):
     with Connection(cache_addr) as c:
         print("Running cache on remote machine...")
         with c.cd(REMOTE_JKV_DIR):
@@ -59,10 +65,11 @@ def run_cache(cache_addr, home, stop_event, use_occ=False):
             # home = c.run("echo $HOME").stdout.strip()
             c.put(str(FAASPE_DIR / 'config.ini'), f'{remote_abs(REMOTE_JKV_DIR, home)}/config/config.ini')
             # Run
+            prefix = env_prefix(cache_env)
             if use_occ:
-                result = c.run('./build/occ_cache', asynchronous=True)
+                result = c.run(f'{prefix}./build/occ_cache', asynchronous=True)
             else:
-                result = c.run('./build/cache_server', asynchronous=True)
+                result = c.run(f'{prefix}./build/cache_server', asynchronous=True)
             # Wait for the stop_event to be set (signaled by client)
             stop_event.wait()
             print(f"Stopping Cache server on {cache_addr}...")
@@ -98,6 +105,14 @@ def run_client(client_addr, stop_event, f_name, num_operations, strategy, **kwar
         stop_event.set()
         
 def run(where, f_name, num_operations, strategy, use_occ=False, **kwargs):
+    local_dir = kwargs.pop("_local_dir", f"{f_name}-{where}")
+    local_suffix = kwargs.pop("_local_suffix", "")
+    local_file_name = kwargs.pop("_local_file_name", None)
+    fetch_invocations = kwargs.pop("_fetch_invocations", False)
+    container_result_dir = kwargs.pop("_container_result_dir", "/usr/src/app/results")
+    kvs_env = kwargs.pop("_kvs_env", None)
+    cache_env = kwargs.pop("_cache_env", None)
+
     # Prepare config and bin
     if where == 'remote':
         servers = [node.conn_addr() for node in read_nodes()]
@@ -109,8 +124,8 @@ def run(where, f_name, num_operations, strategy, use_occ=False, **kwargs):
     
     # Start bench threads
     threads = []
-    threads.append(threading.Thread(target=run_kvs, args=(servers[1], home_path[where], stop_event, use_occ)))
-    threads.append(threading.Thread(target=run_cache, args=(servers[0], home_path[where], stop_event, use_occ)))
+    threads.append(threading.Thread(target=run_kvs, args=(servers[1], home_path[where], stop_event, use_occ, kvs_env)))
+    threads.append(threading.Thread(target=run_cache, args=(servers[0], home_path[where], stop_event, use_occ, cache_env)))
     threads.append(threading.Thread(target=run_client, args=(servers[0], stop_event, f_name, num_operations, strategy), kwargs=kwargs))
     
     for t in threads:
@@ -120,9 +135,33 @@ def run(where, f_name, num_operations, strategy, use_occ=False, **kwargs):
         t.join()
     
     # Fetch data to local (Optional)
-    fetch_data(servers[0], f_name, f'{f_name}-{where}')
+    fetch_data(
+        servers[0],
+        f_name,
+        local_dir,
+        local_suffix,
+        container_file_dir=container_result_dir,
+        local_file_name=local_file_name,
+    )
+    if fetch_invocations:
+        fetch_data(
+            servers[0],
+            f_name,
+            local_dir,
+            local_suffix,
+            container_file_dir=container_result_dir,
+            file_name="invocations.jsonl",
+            local_file_name=f"{f_name}{local_suffix}.jsonl",
+        )
     if 'trace' in f_name:
-        fetch_data(servers[0], f_name, f'{f_name}-{where}', "detailed", file_name='temp_detailed.csv')
+        fetch_data(
+            servers[0],
+            f_name,
+            local_dir,
+            f"{local_suffix}detailed",
+            container_file_dir=container_result_dir,
+            file_name='temp_detailed.csv',
+        )
 
 def lab_run(f_name, num_operations=1000, strategy='local'):
     run('lab', f_name, num_operations, strategy)
@@ -130,8 +169,18 @@ def lab_run(f_name, num_operations=1000, strategy='local'):
 def remote_run(f_name, num_operations=1000, strategy='local', use_occ=False, **kwargs):
     run('remote', f_name, num_operations, strategy, use_occ, **kwargs)
 
-def fetch_data(remote_ip, f_name, local_dir=".", local_path_suffix="", container_file_dir="/usr/src/app/results", file_name='temp.csv'):
-    local_path = FAASPE_DIR / "results" / local_dir / f"{f_name}{local_path_suffix}.csv"
+def fetch_data(
+    remote_ip,
+    f_name,
+    local_dir=".",
+    local_path_suffix="",
+    container_file_dir="/usr/src/app/results",
+    file_name='temp.csv',
+    local_file_name=None,
+):
+    if local_file_name is None:
+        local_file_name = f"{f_name}{local_path_suffix}.csv"
+    local_path = FAASPE_DIR / "results" / local_dir / local_file_name
     local_path.parent.mkdir(parents=True, exist_ok=True)
     with Connection(remote_ip) as c:
         home = c.run("echo $HOME", hide=True).stdout.strip()

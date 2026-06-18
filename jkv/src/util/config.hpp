@@ -1,7 +1,9 @@
 #pragma once
 #include <libconfig.h++>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <string>
 #include "common.hpp"
 #include "fmt/core.h"
 
@@ -38,6 +40,39 @@ public:
             return std::stoi(env_timeout);
         }
         return read_optional_int("func_timeout_ms", 1000);
+    }
+
+    static inline bool object_size_trigger_enabled() {
+        const char* env_enabled = std::getenv("JKV_OBJECT_SIZE_TRIGGER_ENABLED");
+        if (env_enabled) {
+            std::string value(env_enabled);
+            return !(value == "0" || value == "false" || value == "False" || value == "FALSE");
+        }
+        return true;
+    }
+
+    static inline int64_t object_size_trigger_threshold_bytes() {
+        const char* env_threshold = std::getenv("JKV_OBJECT_SIZE_TRIGGER_THRESHOLD_BYTES");
+        if (env_threshold) {
+            return std::stoll(env_threshold);
+        }
+        return static_cast<int64_t>(read_optional_int("object_size_trigger_threshold_bytes", 1024 * 1024));
+    }
+
+    static inline std::string object_size_trigger_func_name() {
+        const char* env_func_name = std::getenv("JKV_OBJECT_SIZE_TRIGGER_FUNC_NAME");
+        if (env_func_name) {
+            return env_func_name;
+        }
+        return read_optional_str("object_size_trigger_func_name", "NONE");
+    }
+
+    static inline std::string object_size_trigger_func_params() {
+        const char* env_func_params = std::getenv("JKV_OBJECT_SIZE_TRIGGER_FUNC_PARAMS");
+        if (env_func_params) {
+            return env_func_params;
+        }
+        return read_optional_str("object_size_trigger_func_params", "{key}");
     }
 
 private:

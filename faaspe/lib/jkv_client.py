@@ -16,6 +16,9 @@ class JKVClient:
         self.context = zmq.Context()
         self.send_socket = self.context.socket(zmq.PUSH)  # To send requests
         self.recv_socket = self.context.socket(zmq.PULL)  # To receive responses
+        self.last_get_trigger_used = False
+        self.last_get_response_type = None
+        self.last_get_trigger_func_name = ""
         self.send_socket.connect(server_recv_addr)  # Client send, server receive
         self.recv_socket.connect(server_send_addr)  # Client receive, server send
         print(f"KVClient connects to {server_recv_addr} for PUSH")
@@ -48,12 +51,22 @@ class JKVClient:
         return res.ok
 
     def get(self, key, client_id="1"):
+        self.last_get_trigger_used = False
+        self.last_get_response_type = None
+        self.last_get_trigger_func_name = ""
         req = jkv_pb2.Request()
         req.reqtype = jkv_pb2.Request.GET
         req.key = key
         req.client_id = client_id
 
         res = self._send_request(req)
+        self.last_get_response_type = res.resptype
+        if res.resptype == jkv_pb2.Response.FUNC:
+            self.last_get_trigger_used = True
+            self.last_get_trigger_func_name = res.key
+            record_jkv_access(JKVAccessMeta(op="get"))
+            return "", 0, res.ok
+
         meta = response_access_meta(res)
         size = -1
         cache_hit = None

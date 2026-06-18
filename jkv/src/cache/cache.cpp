@@ -1,4 +1,27 @@
 #include "cache.h"
+#include "util/config.hpp"
+
+namespace {
+void replace_all(std::string& value, const std::string& from, const std::string& to) {
+    if (from.empty()) {
+        return;
+    }
+    size_t pos = 0;
+    while ((pos = value.find(from, pos)) != std::string::npos) {
+        value.replace(pos, from.length(), to);
+        pos += to.length();
+    }
+}
+
+std::string build_trigger_params(const Request& request, int64_t object_size, int64_t threshold) {
+    std::string params = ConfUtil::object_size_trigger_func_params();
+    replace_all(params, "{key}", request.key());
+    replace_all(params, "{client_id}", request.client_id());
+    replace_all(params, "{object_size}", std::to_string(object_size));
+    replace_all(params, "{threshold}", std::to_string(threshold));
+    return params;
+}
+}
 
 CacheServer::CacheServer(const std::string& cache_send_port, 
                         const std::string& cache_recv_port,
@@ -75,6 +98,10 @@ void CacheServer::ProcessUserRequest(const Request& req) {
                 // Cache hit: respond directly with the value from cache
                 spdlog::debug("Cache hit for key: {}, version {}", req.key(), get_version(it->second));
 
+                if (MaybeDispatchObjectSizeTrigger(req, it->second)) {
+                    break;
+                }
+
                 Response response;
                 ValueWithVersion_t value_version = {get_value(it->second), get_version(it->second)};
                 zmqutil::build_response(
@@ -114,6 +141,49 @@ void CacheServer::ProcessUserRequest(const Request& req) {
             break;
         }
     }
+}
+
+bool CacheServer::MaybeDispatchObjectSizeTrigger(const Request& req, const ValueWithVersion_t& value_version) {
+    int64_t object_size = static_cast<int64_t>(get_value(value_version).size());
+    if (!ConfUtil::object_size_trigger_enabled()) {
+        spdlog::debug(
+            "Object-size trigger disabled key={} object_size={}",
+            req.key(),
+            object_size);
+        return false;
+    }
+
+    int64_t threshold = ConfUtil::object_size_trigger_threshold_bytes();
+    std::string func_name = ConfUtil::object_size_trigger_func_name();
+    if (object_size < threshold) {
+        spdlog::debug(
+            "Object-size trigger skipped key={} object_size={} threshold={} func={}",
+            req.key(),
+            object_size,
+            threshold,
+            func_name);
+        return false;
+    }
+
+    std::string params = build_trigger_params(req, object_size, threshold);
+    bool sent = kv_client_.func_async(func_name, params, req.client_id());
+    if (!sent) {
+        spdlog::warn(
+            "Object-size trigger failed to send FUNC; falling back to cached GET key={} object_size={} threshold={} func={}",
+            req.key(),
+            object_size,
+            threshold,
+            func_name);
+        return false;
+    }
+
+    spdlog::debug(
+        "Object-size trigger used key={} object_size={} threshold={} func={}",
+        req.key(),
+        object_size,
+        threshold,
+        func_name);
+    return true;
 }
 
 // TODO: add client_id and reqtype for response

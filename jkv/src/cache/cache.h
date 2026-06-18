@@ -19,6 +19,7 @@ public:
 private:
     void ProcessUserRequest(const Request& request);
     void ProcessKVResponse(const Response& response);
+    bool MaybeDispatchObjectSizeTrigger(const Request& request, const ValueWithVersion_t& value_version);
 
     KVClient kv_client_;    // For communication with the KV store
     zmq::socket_t send_socket_;  // For client communication

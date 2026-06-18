@@ -38,6 +38,8 @@ class FileReplicator(Benchmark):
             ok = self.client.func('NONE', '')
         
         byte_string, _, ok = self.client.get('source')
+        if getattr(self.client, "last_get_trigger_used", False):
+            return ok
         ok = self.client.put('target', byte_string, i)
         
         return ok

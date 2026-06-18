@@ -8,6 +8,7 @@ from jkv_client import JKVClient
 
 DEFAULT_DEPTHS = "1,2,4,8"
 DEFAULT_VALUE_SIZES = "1024"
+DEFAULT_OBJECT_SIZES = "1024,4096,10240,32768,65536,102400,262144,524288,1048576,2097152"
 DEFAULT_KEY_COUNT = 128
 DEFAULT_RESULT_DIR = "/usr/src/app/results"
 
@@ -34,6 +35,7 @@ def stats_us(samples):
         "median_us": statistics.median(samples),
         "mean_us": statistics.fmean(samples),
         "p90_us": percentile(samples, 90),
+        "p95_us": percentile(samples, 95),
         "p99_us": percentile(samples, 99),
         "min_us": min(samples),
         "max_us": max(samples),
@@ -60,6 +62,23 @@ def measure(samples, warmup, fn):
     return latencies, success
 
 
+def measure_with_trigger(samples, warmup, fn, client):
+    for _ in range(warmup):
+        fn()
+
+    latencies = []
+    success = 0
+    trigger_count = 0
+    for _ in range(samples):
+        elapsed, ok = time_us(fn)
+        latencies.append(elapsed)
+        if ok:
+            success += 1
+        if getattr(client, "last_get_trigger_used", False):
+            trigger_count += 1
+    return latencies, success, trigger_count
+
+
 def write_csv(path, rows):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", newline="") as f:
@@ -73,6 +92,13 @@ def initialize_keys(client, value, key_count, key_prefix):
         key = f"{key_prefix}-{idx}"
         if not client.put(key, value, idx + 1):
             raise RuntimeError(f"failed to initialize key {key}")
+
+
+def bool_env(name, default):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value not in {"0", "false", "False", "FALSE"}
 
 
 def recommend_threshold(depth_rows, func_median_us):
@@ -92,15 +118,19 @@ def main():
     warmup = int(os.getenv("WARMUP", "100"))
     depths = parse_int_list(os.getenv("DEPTHS", DEFAULT_DEPTHS))
     value_sizes = parse_int_list(os.getenv("VALUE_SIZES", DEFAULT_VALUE_SIZES))
+    object_sizes = parse_int_list(os.getenv("OBJECT_SIZES", DEFAULT_OBJECT_SIZES))
     key_count = int(os.getenv("KEY_COUNT", str(DEFAULT_KEY_COUNT)))
     result_dir = os.getenv("FAASPE_RESULT_DIR", DEFAULT_RESULT_DIR)
     key_prefix = os.getenv("KEY_PREFIX", "placement-calibration")
+    run_depth_calibration = bool_env("RUN_DEPTH_CALIBRATION", True)
+    run_object_size_calibration = bool_env("RUN_OBJECT_SIZE_CALIBRATION", False)
+    run_trigger_sanity = bool_env("RUN_OBJECT_SIZE_TRIGGER_SANITY", False)
 
     client = JKVClient(push_addr, pull_addr)
     rows = []
     recommendations = []
 
-    for value_size in value_sizes:
+    for value_size in value_sizes if run_depth_calibration else []:
         value = "a" * value_size
         initialize_keys(client, value, key_count, f"{key_prefix}-{value_size}")
         keys = [f"{key_prefix}-{value_size}-{idx}" for idx in range(key_count)]
@@ -165,11 +195,94 @@ def main():
                 "median_us": func_row["median_us"],
                 "mean_us": func_row["mean_us"],
                 "p90_us": func_row["p90_us"],
+                "p95_us": func_row["p95_us"],
                 "p99_us": func_row["p99_us"],
                 "min_us": func_row["min_us"],
                 "max_us": func_row["max_us"],
             }
         )
+
+    for object_size in object_sizes if run_object_size_calibration else []:
+        value = "a" * object_size
+        initialize_keys(client, value, key_count, f"{key_prefix}-object-{object_size}")
+        keys = [f"{key_prefix}-object-{object_size}-{idx}" for idx in range(key_count)]
+
+        cursor = 0
+
+        def cache_get():
+            nonlocal cursor
+            key = keys[cursor % len(keys)]
+            cursor += 1
+            _, _, ok = client.get(key)
+            return ok
+
+        latencies, success = measure(samples, warmup, cache_get)
+        row = {
+            "operation": "object_size_get",
+            "variant": "cache",
+            "object_size": object_size,
+            "samples": samples,
+            "warmup": warmup,
+            "success": success,
+        }
+        row.update(stats_us(latencies))
+        rows.append(row)
+
+        cursor = 0
+
+        def storage_func_get():
+            nonlocal cursor
+            key = keys[cursor % len(keys)]
+            cursor += 1
+            return client.func("GET", key)
+
+        latencies, success = measure(samples, warmup, storage_func_get)
+        row = {
+            "operation": "object_size_get",
+            "variant": "storage",
+            "object_size": object_size,
+            "samples": samples,
+            "warmup": warmup,
+            "success": success,
+        }
+        row.update(stats_us(latencies))
+        rows.append(row)
+
+    if run_trigger_sanity:
+        sanity_sizes_raw = os.getenv("OBJECT_SIZE_TRIGGER_SANITY_SIZES", "")
+        if sanity_sizes_raw:
+            sanity_sizes = parse_int_list(sanity_sizes_raw)
+        else:
+            sanity_size = int(os.getenv("OBJECT_SIZE_TRIGGER_SANITY_SIZE", "0"))
+            sanity_sizes = [sanity_size] if sanity_size > 0 else object_sizes
+        label = os.getenv("OBJECT_SIZE_TRIGGER_SANITY_LABEL", "trigger")
+        for sanity_size in sanity_sizes:
+            value = "a" * sanity_size
+            initialize_keys(client, value, key_count, f"{key_prefix}-trigger-{label}-{sanity_size}")
+            keys = [f"{key_prefix}-trigger-{label}-{sanity_size}-{idx}" for idx in range(key_count)]
+            cursor = 0
+
+            def cached_get():
+                nonlocal cursor
+                key = keys[cursor % len(keys)]
+                cursor += 1
+                _, _, ok = client.get(key)
+                return ok
+
+            latencies, success, trigger_count = measure_with_trigger(samples, warmup, cached_get, client)
+            row = {
+                "operation": "object_size_trigger_sanity",
+                "variant": label,
+                "object_size": sanity_size,
+                "samples": samples,
+                "warmup": warmup,
+                "success": success,
+                "trigger_used": int(trigger_count > 0),
+                "trigger_count": trigger_count,
+                "observed_placement": "storage" if trigger_count > 0 else "cache",
+            }
+            row.update(stats_us(latencies))
+            rows.append(row)
 
     output_path = os.path.join(result_dir, "temp.csv")
     write_csv(output_path, rows + recommendations)
