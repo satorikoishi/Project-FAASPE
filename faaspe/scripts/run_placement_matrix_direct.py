@@ -110,6 +110,11 @@ def docker_cp(function_name, container_path, local_path):
     )
 
 
+def restart_function_container(function_name):
+    subprocess.run(["docker", "restart", f"faaspe-{function_name}"], check=True)
+    time.sleep(0.5)
+
+
 def restart_cache_server(jkv_dir, cache_env, log_path):
     log_path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["pkill", "-x", "cache_server"], check=False)
@@ -453,6 +458,8 @@ def run_matrix(args, output_dir, container_result_dir, model):
                     params["FAASPE_INVOCATION_LOG_PATH"] = (
                         f"{container_result_dir}/{log_name}"
                     )
+                if args.restart_function_container:
+                    restart_function_container("placement-matrix")
                 invoke("placement-matrix", params)
                 file_name = f"matrix_depth{depth}_size{object_size}_{variant}.csv"
                 result_csv = output_dir / file_name
@@ -518,6 +525,8 @@ def main():
     parser.add_argument("--jkv-dir", default=str(DEFAULT_JKV_DIR))
     parser.add_argument("--manage-cache-server", action="store_true", default=True)
     parser.add_argument("--no-manage-cache-server", dest="manage_cache_server", action="store_false")
+    parser.add_argument("--restart-function-container", action="store_true", default=True)
+    parser.add_argument("--no-restart-function-container", dest="restart_function_container", action="store_false")
     parser.add_argument("--enable-invocation-log", action="store_true")
     args = parser.parse_args()
 
@@ -542,9 +551,13 @@ def main():
     print(json.dumps(recommendations, indent=2, sort_keys=True))
     print("MATRIX_SUMMARY_CSV")
     for row in rows:
+        printable = dict(row)
+        printable.setdefault("oracle_side", "")
+        printable.setdefault("placement_correct_rate", "")
+        printable.setdefault("normalized_total_latency", "")
         print(
             "{depth},{object_size},{variant},{median_ms},{native_count},{func_count},{oracle_side},{placement_correct_rate},{normalized_total_latency}".format(
-                **row
+                **printable
             )
         )
 
