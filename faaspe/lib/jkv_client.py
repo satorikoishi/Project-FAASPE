@@ -78,7 +78,13 @@ class JKVClient:
         if res.resptype == jkv_pb2.Response.FUNC:
             self.last_get_trigger_used = True
             self.last_get_trigger_func_name = res.key
-            record_jkv_access(JKVAccessMeta(op="get"))
+            record_jkv_access(
+                JKVAccessMeta(
+                    op="get",
+                    trigger_used=True,
+                    trigger_func_name=res.key,
+                )
+            )
             return "", 0, res.ok
 
         meta = response_access_meta(res)

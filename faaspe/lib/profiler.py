@@ -311,6 +311,20 @@ class Profiler:
     ):
         if arbiter is None or access_meta is None:
             return plan.expected_us
+        if placement == "func":
+            expected = arbiter.estimate_latency_us(
+                function_name,
+                params,
+                placement,
+            )
+            return expected if expected is not None else plan.expected_us
+        if getattr(access_meta, "cache_misses", 0) > 0:
+            expected = arbiter.estimate_latency_us(
+                function_name,
+                params,
+                "func",
+            )
+            return expected if expected is not None else plan.expected_us
         object_size = getattr(access_meta, "max_object_size", -1)
         if placement != "native" or object_size is None or object_size < 0:
             return plan.expected_us

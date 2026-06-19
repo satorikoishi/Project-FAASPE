@@ -5,7 +5,14 @@ UNKNOWN_BUCKET = "unknown"
 
 
 class JKVAccessMeta:
-    __slots__ = ("op", "cache_hit", "object_size", "object_size_bucket")
+    __slots__ = (
+        "op",
+        "cache_hit",
+        "object_size",
+        "object_size_bucket",
+        "trigger_used",
+        "trigger_func_name",
+    )
 
     def __init__(
         self,
@@ -13,18 +20,24 @@ class JKVAccessMeta:
         cache_hit=None,
         object_size=-1,
         object_size_bucket=UNKNOWN_BUCKET,
+        trigger_used=False,
+        trigger_func_name="",
     ):
         self.op = op
         self.cache_hit = cache_hit
         self.object_size = object_size
         self.object_size_bucket = object_size_bucket
+        self.trigger_used = trigger_used
+        self.trigger_func_name = trigger_func_name
 
     def __repr__(self):
         return (
             "JKVAccessMeta("
             f"op={self.op!r}, cache_hit={self.cache_hit!r}, "
             f"object_size={self.object_size!r}, "
-            f"object_size_bucket={self.object_size_bucket!r})"
+            f"object_size_bucket={self.object_size_bucket!r}, "
+            f"trigger_used={self.trigger_used!r}, "
+            f"trigger_func_name={self.trigger_func_name!r})"
         )
 
 
@@ -38,6 +51,9 @@ class InvocationAccessMeta:
         "total_object_size",
         "object_size_bucket",
         "cache_state",
+        "trigger_used",
+        "trigger_count",
+        "trigger_func_name",
     )
 
     def __init__(
@@ -50,6 +66,9 @@ class InvocationAccessMeta:
         total_object_size=0,
         object_size_bucket=UNKNOWN_BUCKET,
         cache_state=UNKNOWN_BUCKET,
+        trigger_used=False,
+        trigger_count=0,
+        trigger_func_name="",
     ):
         self.get_count = get_count
         self.put_count = put_count
@@ -59,8 +78,17 @@ class InvocationAccessMeta:
         self.total_object_size = total_object_size
         self.object_size_bucket = object_size_bucket
         self.cache_state = cache_state
+        self.trigger_used = trigger_used
+        self.trigger_count = trigger_count
+        self.trigger_func_name = trigger_func_name
 
     def add_jkv_meta(self, meta):
+        if getattr(meta, "trigger_used", False):
+            self.trigger_used = True
+            self.trigger_count += 1
+            if getattr(meta, "trigger_func_name", ""):
+                self.trigger_func_name = meta.trigger_func_name
+
         if meta.op == "get":
             self.get_count += 1
             if meta.cache_hit is True:
@@ -87,6 +115,9 @@ class InvocationAccessMeta:
             "total_object_size": self.total_object_size,
             "object_size_bucket": self.object_size_bucket,
             "cache_state": self.cache_state,
+            "trigger_used": self.trigger_used,
+            "trigger_count": self.trigger_count,
+            "trigger_func_name": self.trigger_func_name,
         }
 
 

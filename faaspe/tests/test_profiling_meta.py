@@ -58,6 +58,21 @@ def test_get_miss_updates_cache_misses_and_object_size():
     assert meta.cache_state == "miss"
 
 
+def test_get_trigger_updates_trigger_metadata():
+    meta = InvocationAccessMeta()
+    meta.add_jkv_meta(
+        JKVAccessMeta(
+            op="get",
+            trigger_used=True,
+            trigger_func_name="NONE",
+        )
+    )
+    assert meta.get_count == 1
+    assert meta.trigger_used
+    assert meta.trigger_count == 1
+    assert meta.trigger_func_name == "NONE"
+
+
 def test_put_updates_put_count_and_object_size():
     meta = InvocationAccessMeta()
     size = 12
@@ -113,6 +128,13 @@ def test_invocation_record_includes_access_metadata(monkeypatch):
     assert records[0]["cache_hits"] == 1
     assert records[0]["max_object_size"] == 3
     assert records[0]["object_size_bucket"] == "1KB"
+
+
+def test_triggered_native_get_is_logged_as_func():
+    bench = Benchmark.__new__(Benchmark)
+    access_meta = InvocationAccessMeta(trigger_used=True)
+    assert bench.effective_placement("native", access_meta) == "func"
+    assert bench.effective_placement("func", access_meta) == "func"
 
 
 def test_async_profiler_record_fast_drops_without_blocking_when_queue_full():
@@ -265,6 +287,52 @@ def test_profiler_uses_observed_object_size_for_violation_check():
         "native",
         2500,
         params={"depth": 1, "object_size": 1024 * 1024},
+        access_meta=access_meta,
+        arbiter=arbiter,
+    )
+
+    assert not profiler._profile("placement-matrix").exploring
+
+
+def test_small_depth_latency_only_applies_to_small_objects():
+    model = PlacementLatencyModel(
+        linear_start_depth=4,
+        small_depth_cache_latency_us={"1": 200},
+        cache_object_size_latency_us=[
+            {"max_bytes": 1024, "latency_us": 100},
+            {"max_bytes": 10240, "latency_us": 150},
+            {"max_bytes": 102400, "latency_us": 1000},
+        ],
+        storage_base_latency_us=900,
+    )
+    assert model.cache_latency_us(1, 10240) == 200
+    assert model.cache_latency_us(1, 102400) == 1000
+
+
+def test_profiler_treats_cache_miss_expected_latency_as_storage():
+    model = PlacementLatencyModel(
+        linear_start_depth=4,
+        small_depth_cache_latency_us={"1": 200},
+        cache_object_size_latency_us=[
+            {"max_bytes": 1024, "latency_us": 100},
+        ],
+        storage_base_latency_us=900,
+    )
+    arbiter = Arbiter(latency_model=model)
+    profiler = Profiler(
+        enabled=True,
+        violation_factor=1.5,
+        violation_limit=1,
+        explore_samples=1,
+    )
+    profiler.choose("placement-matrix", {"depth": 1}, arbiter)
+    access_meta = InvocationAccessMeta(get_count=1, cache_misses=1, max_object_size=1024)
+
+    profiler.record(
+        "placement-matrix",
+        "native",
+        1000,
+        params={"depth": 1},
         access_meta=access_meta,
         arbiter=arbiter,
     )

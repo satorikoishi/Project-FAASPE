@@ -19,6 +19,7 @@ DEFAULT_PROFILES = {
 
 PROFILE_MANIFEST = "faaspe_rpn.json"
 LATENCY_MODEL_MANIFEST = "placement_latency_model.json"
+SMALL_DEPTH_MAX_OBJECT_SIZE_BYTES = 10 * 1024
 
 
 @dataclass
@@ -143,8 +144,13 @@ class PlacementLatencyModel:
 
     def cache_latency_us(self, depth, object_size):
         depth = float(depth or 0.0)
+        object_size = int(object_size or 0)
         depth_key = int(depth)
-        if depth == depth_key and depth_key < self.linear_start_depth:
+        if (
+            object_size <= SMALL_DEPTH_MAX_OBJECT_SIZE_BYTES
+            and depth == depth_key
+            and depth_key < self.linear_start_depth
+        ):
             small_latency = self.small_depth_cache_latency_us.get(depth_key)
             if small_latency is not None:
                 return small_latency

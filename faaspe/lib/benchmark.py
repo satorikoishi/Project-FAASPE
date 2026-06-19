@@ -57,8 +57,6 @@ class Benchmark:
             if self.strategy == 'faaspe':
                 placement_params = bench_util.params_with_storage_load(placement_params)
             placement = bench_util.strategy_placement(self.strategy, self.name, placement_params)
-            if placement in self.placement_counts:
-                self.placement_counts[placement] += 1
             if self.strategy == 'faaspe':
                 self.arbiter_overheads.append(bench_util.arbiter_overhead_us())
                 self.profiler_choose_overheads.append(bench_util.profiler_overhead_us())
@@ -73,10 +71,13 @@ class Benchmark:
             latency = op_end_time - op_start_time
             latencies.append(latency)
             access_meta = snapshot_invocation_access_meta()
+            effective_placement = self.effective_placement(placement, access_meta)
+            if effective_placement in self.placement_counts:
+                self.placement_counts[effective_placement] += 1
             bench_util.record_profile(
                 self.strategy,
                 self.name,
-                placement,
+                effective_placement,
                 latency * 1e6,
                 params=placement_params,
                 access_meta=access_meta,
@@ -86,11 +87,12 @@ class Benchmark:
             self.log_invocation(
                 i,
                 placement_params,
-                placement,
+                effective_placement,
                 plan,
                 latency,
                 access_meta,
                 invocation_start_ns,
+                requested_placement=placement,
             )
             
             if res:
@@ -140,7 +142,22 @@ class Benchmark:
         """Return low-cost invocation parameters used to solve registered RPN."""
         return {}
 
-    def log_invocation(self, invocation_id, params, placement, plan, latency, access_meta, invocation_start_ns):
+    def effective_placement(self, placement, access_meta):
+        if placement == "native" and getattr(access_meta, "trigger_used", False):
+            return "func"
+        return placement
+
+    def log_invocation(
+        self,
+        invocation_id,
+        params,
+        placement,
+        plan,
+        latency,
+        access_meta,
+        invocation_start_ns,
+        requested_placement=None,
+    ):
         logger_enabled = self.invocation_logger.is_enabled()
         async_profiler_enabled = bench_util.async_profiler_enabled()
         if not logger_enabled and not async_profiler_enabled:
@@ -171,6 +188,7 @@ class Benchmark:
             "placement_params": params,
             "estimated_access_depth": plan.access_depth,
             "estimated_object_size": plan.object_size,
+            "requested_placement": requested_placement or placement,
             "selected_side": selected_side,
             "raw_placement": placement,
             "reason": reason,
@@ -187,6 +205,10 @@ class Benchmark:
             "ast_analysis_us": plan.ast_analysis_us,
         }
         record.update(access_record)
+        record["trigger_used"] = bool(
+            access_record.get("trigger_used")
+            or getattr(plan, "trigger_check_us", 0.0)
+        )
         if logger_enabled:
             self.invocation_logger.write(record)
         if async_profiler_enabled:
