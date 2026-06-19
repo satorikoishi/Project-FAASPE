@@ -162,6 +162,37 @@ def test_existing_placement_behavior_unchanged_when_profiling_disabled(monkeypat
     assert plan.placement == arbiter.explain("list-traversal", {"depth": 8}).placement
 
 
+def test_profiler_recheck_interval_defaults_to_disabled(monkeypatch):
+    monkeypatch.delenv("FAASPE_PROFILER_RECHECK_INTERVAL", raising=False)
+    assert Profiler.from_env().recheck_interval == 0
+
+
+def test_profiler_recheck_skipped_for_known_static_profile():
+    arbiter = Arbiter()
+    profiler = Profiler(enabled=True, recheck_interval=1)
+    profile = profiler._profile("list-traversal")
+    profile.override_placement = "func"
+
+    plan = profiler.choose("list-traversal", {"depth": 1}, arbiter)
+
+    assert plan.placement == "func"
+    assert plan.reason == "fallback"
+    assert profile.recheck_count == 0
+
+
+def test_profiler_recheck_allowed_when_static_profile_missing():
+    arbiter = Arbiter()
+    profiler = Profiler(enabled=True, recheck_interval=1)
+    profile = profiler._profile("unknown-function")
+    profile.override_placement = "func"
+
+    plan = profiler.choose("unknown-function", {}, arbiter)
+
+    assert plan.placement == "native"
+    assert plan.reason == "recheck"
+    assert profile.recheck_count == 1
+
+
 def test_arbiter_storage_depth_threshold_can_include_depth_four(monkeypatch):
     monkeypatch.delenv("FAASPE_STORAGE_DEPTH_THRESHOLD", raising=False)
     assert Arbiter().explain("list-traversal", {"depth": 4}).placement == "native"

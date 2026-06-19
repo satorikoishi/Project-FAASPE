@@ -1,0 +1,51 @@
+{
+  "cache_object_size_latency_us": [
+    {
+      "latency_us": 197.18753173947334,
+      "max_bytes": 1024
+    },
+    {
+      "latency_us": 207.09598902612925,
+      "max_bytes": 4096
+    },
+    {
+      "latency_us": 257.7150007709861,
+      "max_bytes": 10240
+    },
+    {
+      "latency_us": 468.8934423029423,
+      "max_bytes": 32768
+    },
+    {
+      "latency_us": 787.9460463300347,
+      "max_bytes": 65536
+    },
+    {
+      "latency_us": 1207.2850950062275,
+      "max_bytes": 102400
+    },
+    {
+      "latency_us": 1941.3905683904886,
+      "max_bytes": 262144
+    },
+    {
+      "latency_us": 3105.5400613695383,
+      "max_bytes": 524288
+    },
+    {
+      "latency_us": 5924.253026023507,
+      "max_bytes": 1048576
+    },
+    {
+      "latency_us": 10277.023073285818,
+      "max_bytes": 2097152
+    }
+  ],
+  "linear_start_depth": 4,
+  "small_depth_cache_latency_us": {
+    "1": 205.9335820376873,
+    "2": 394.48647294193506,
+    "3": 592.3925200477242
+  },
+  "storage_base_latency_us": 931.3700720667839
+}

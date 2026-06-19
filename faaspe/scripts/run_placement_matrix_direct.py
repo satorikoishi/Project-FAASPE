@@ -236,7 +236,7 @@ def run_matrix(args, output_dir, container_result_dir, model):
                     "FAASPE_RESULT_DIR": container_result_dir,
                     "FAASPE_STORAGE_HEARTBEAT_ENABLED": "0",
                 }
-                if strategy == "faaspe":
+                if strategy == "faaspe" and args.inject_calibrated_model:
                     params["FAASPE_PLACEMENT_LATENCY_MODEL_JSON"] = model_json
                 invoke("placement-matrix", params)
                 file_name = f"matrix_depth{depth}_size{object_size}_{strategy}.csv"
@@ -276,6 +276,7 @@ def main():
     parser.add_argument("--linear-start-depth", type=int, default=4)
     parser.add_argument("--object-size-margin", type=float, default=0.05)
     parser.add_argument("--default-object-size-threshold", type=int, default=102400)
+    parser.add_argument("--inject-calibrated-model", action="store_true")
     args = parser.parse_args()
 
     output_dir = ROOT / "results" / args.output_dir

@@ -96,8 +96,9 @@ class Profiler:
 
     Arbiter remains the fast path. Profiler watches observed latency against
     Arbiter's expected latency. If recent invocations exceed expectation too
-    often, it explores both placements, selects the lower-median side, and
-    periodically rechecks the other side.
+    often, it explores both placements and selects the lower-median side.
+    Periodic recheck is opt-in and only used when Arbiter lacks static
+    analysis for the function.
     """
 
     def __init__(
@@ -107,7 +108,7 @@ class Profiler:
         violation_window=20,
         violation_limit=3,
         explore_samples=10,
-        recheck_interval=100,
+        recheck_interval=0,
         history_limit=200,
         fallback_enabled=True,
     ):
@@ -131,7 +132,7 @@ class Profiler:
             violation_window=int(os.getenv("FAASPE_PROFILER_VIOLATION_WINDOW", 20)),
             violation_limit=int(os.getenv("FAASPE_PROFILER_VIOLATION_LIMIT", 3)),
             explore_samples=int(os.getenv("FAASPE_PROFILER_EXPLORE_SAMPLES", 10)),
-            recheck_interval=int(os.getenv("FAASPE_PROFILER_RECHECK_INTERVAL", 100)),
+            recheck_interval=int(os.getenv("FAASPE_PROFILER_RECHECK_INTERVAL", 0)),
             history_limit=int(os.getenv("FAASPE_PROFILER_HISTORY_LIMIT", 200)),
             fallback_enabled=os.getenv("FAASPE_FALLBACK_ENABLED", "1") != "0",
         )
@@ -167,10 +168,7 @@ class Profiler:
         if self.fallback_enabled and profile.override_placement:
             placement = profile.override_placement
             reason = "fallback"
-            if (
-                self.recheck_interval > 0
-                and profile.invocations % self.recheck_interval == 0
-            ):
+            if self._should_recheck(profile, decision):
                 placement = opposite_placement(profile.override_placement)
                 reason = "recheck"
                 profile.recheck_count += 1
@@ -273,6 +271,13 @@ class Profiler:
 
     def _append_history(self, history, latency_us):
         history.append(latency_us)
+
+    def _should_recheck(self, profile, decision):
+        if self.recheck_interval <= 0:
+            return False
+        if decision.reason != "unsupported_static_analysis":
+            return False
+        return profile.invocations % self.recheck_interval == 0
 
     def _plan_from_decision(self, decision, expected_us):
         return InvocationPlan(

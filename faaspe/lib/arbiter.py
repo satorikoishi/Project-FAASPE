@@ -225,6 +225,9 @@ class Arbiter:
         if env_path:
             candidates.append(env_path)
         candidates.append(LATENCY_MODEL_MANIFEST)
+        candidates.append(
+            os.path.join(os.path.dirname(__file__), LATENCY_MODEL_MANIFEST)
+        )
 
         for candidate in candidates:
             if candidate and os.path.exists(candidate):
