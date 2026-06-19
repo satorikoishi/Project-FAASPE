@@ -1,8 +1,10 @@
 # Placement Ablation Variants
 
-These variants are controlled with environment variables. Function/runtime
-variables are passed to the FaaSPE function invocation. JKV cache variables must
-be set on the `cache_server` process, or through runner `_cache_env`.
+These variants are recorded in `faaspe/lib/placement_variants.json`. Experiment
+scripts should load that JSON instead of duplicating the environment variables.
+Function/runtime variables are passed to the FaaSPE function invocation. JKV
+cache variables must be set on the `cache_server` process, or through runner
+`_cache_env`.
 
 ## Variant 1: static-only
 
@@ -84,6 +86,12 @@ Profiler immediately explores placements for unknown functions and then uses the
 lower observed-latency side as fallback override.
 
 ## Notes
+
+The full `faaspe` variant enables the JKV cache-side object-size trigger. Use
+`static-only` to disable both profiler/fallback and cache trigger, `arbiter-only`
+to enable static Arbiter plus cache trigger without profiler/fallback, and
+`runtime-only` to force unknown static analysis and rely on runtime fallback
+without cache trigger.
 
 `FAASPE_ARBITER_FORCE_UNKNOWN=1` is a global switch for ablation. Without it,
 the older workaround was to override each profile in `FAASPE_RPN_PROFILES` with

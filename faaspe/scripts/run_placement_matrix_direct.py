@@ -16,77 +16,24 @@ DEFAULT_CALIBRATION_OBJECT_SIZES = "1024,4096,10240,32768,65536,102400,262144,52
 PUSH_ADDR = os.getenv("PUSH_ADDR", "tcp://10.10.1.1:50053")
 PULL_ADDR = os.getenv("PULL_ADDR", "tcp://10.10.1.1:50054")
 DEFAULT_MODEL_PATH = ROOT / "lib" / "placement_latency_model.json"
+DEFAULT_VARIANT_CONFIG_PATH = ROOT / "lib" / "placement_variants.json"
 DEFAULT_JKV_DIR = ROOT.parent / "jkv"
-VARIANT_CACHE_TRIGGER_THRESHOLD = os.getenv(
-    "JKV_OBJECT_SIZE_TRIGGER_THRESHOLD_BYTES", "102400"
-)
-
-
-VARIANTS = {
-    "local": {
-        "strategy": "local",
-        "label": "local",
-        "function_env": {},
-        "cache_env": {"JKV_OBJECT_SIZE_TRIGGER_ENABLED": "0"},
-    },
-    "remote": {
-        "strategy": "remote",
-        "label": "remote",
-        "function_env": {},
-        "cache_env": {"JKV_OBJECT_SIZE_TRIGGER_ENABLED": "0"},
-    },
-    "faaspe": {
-        "strategy": "faaspe",
-        "label": "faaspe",
-        "function_env": {},
-        "cache_env": {"JKV_OBJECT_SIZE_TRIGGER_ENABLED": "0"},
-    },
-    "static-only": {
-        "strategy": "faaspe",
-        "label": "static-only",
-        "function_env": {
-            "FAASPE_PROFILE_ENABLED": "0",
-            "FAASPE_PROFILER_ENABLED": "0",
-            "FAASPE_ACCESS_META_ENABLED": "1",
-            "FAASPE_FALLBACK_ENABLED": "0",
-            "FAASPE_ARBITER_FORCE_UNKNOWN": "0",
-        },
-        "cache_env": {"JKV_OBJECT_SIZE_TRIGGER_ENABLED": "0"},
-    },
-    "arbiter-only": {
-        "strategy": "faaspe",
-        "label": "arbiter-only",
-        "function_env": {
-            "FAASPE_PROFILE_ENABLED": "0",
-            "FAASPE_PROFILER_ENABLED": "0",
-            "FAASPE_ACCESS_META_ENABLED": "1",
-            "FAASPE_FALLBACK_ENABLED": "0",
-            "FAASPE_ARBITER_FORCE_UNKNOWN": "0",
-        },
-        "cache_env": {
-            "JKV_OBJECT_SIZE_TRIGGER_ENABLED": "1",
-            "JKV_OBJECT_SIZE_TRIGGER_THRESHOLD_BYTES": VARIANT_CACHE_TRIGGER_THRESHOLD,
-            "JKV_OBJECT_SIZE_TRIGGER_FUNC_NAME": "NONE",
-        },
-    },
-    "runtime-only": {
-        "strategy": "faaspe",
-        "label": "runtime-only",
-        "function_env": {
-            "FAASPE_ARBITER_FORCE_UNKNOWN": "1",
-            "FAASPE_PROFILE_ENABLED": "1",
-            "FAASPE_PROFILER_ENABLED": "1",
-            "FAASPE_FALLBACK_ENABLED": "1",
-            "FAASPE_PROFILER_EXPLORE_ON_UNKNOWN": "1",
-            "FAASPE_PROFILER_RECHECK_INTERVAL": "0",
-        },
-        "cache_env": {"JKV_OBJECT_SIZE_TRIGGER_ENABLED": "0"},
-    },
-}
 
 
 def parse_int_list(value):
     return [int(item.strip()) for item in value.split(",") if item.strip()]
+
+
+def load_variant_config(path):
+    with open(path) as f:
+        variants = json.load(f)
+    threshold_override = os.getenv("JKV_OBJECT_SIZE_TRIGGER_THRESHOLD_BYTES")
+    if threshold_override:
+        for spec in variants.values():
+            cache_env = spec.get("cache_env", {})
+            if "JKV_OBJECT_SIZE_TRIGGER_THRESHOLD_BYTES" in cache_env:
+                cache_env["JKV_OBJECT_SIZE_TRIGGER_THRESHOLD_BYTES"] = threshold_override
+    return variants
 
 
 def invoke(function_name, params):
@@ -233,6 +180,12 @@ def latest_row(path):
 def load_latency_model(path):
     with open(path) as f:
         return json.load(f)
+
+
+def write_variant_config_snapshot(path, variant_config):
+    with open(path, "w") as f:
+        json.dump(variant_config, f, indent=2, sort_keys=True)
+        f.write("\n")
 
 
 def fixed_recommendations(model, model_path):
@@ -414,10 +367,11 @@ def run_calibration(args, output_dir, container_result_dir):
 def run_matrix(args, output_dir, container_result_dir, model):
     rows = []
     model_json = json.dumps(model, sort_keys=True)
+    variant_config = load_variant_config(args.variant_config)
     variants = [item.strip() for item in args.variants.split(",") if item.strip()]
     for variant in variants:
-        if variant not in VARIANTS:
-            known = ", ".join(sorted(VARIANTS))
+        if variant not in variant_config:
+            known = ", ".join(sorted(variant_config))
             raise ValueError(f"Unknown variant '{variant}'. Known variants: {known}")
 
     jkv_dir = Path(args.jkv_dir)
@@ -425,7 +379,7 @@ def run_matrix(args, output_dir, container_result_dir, model):
     for depth in parse_int_list(args.depths):
         for object_size in parse_int_list(args.object_sizes):
             for variant in variants:
-                spec = VARIANTS[variant]
+                spec = variant_config[variant]
                 strategy = spec["strategy"]
                 cache_env = spec["cache_env"]
                 if args.manage_cache_server and cache_env != last_cache_env:
@@ -519,6 +473,7 @@ def main():
     parser.add_argument("--inject-calibrated-model", action="store_true")
     parser.add_argument("--run-calibration", action="store_true")
     parser.add_argument("--model-path", default=str(DEFAULT_MODEL_PATH))
+    parser.add_argument("--variant-config", default=str(DEFAULT_VARIANT_CONFIG_PATH))
     parser.add_argument("--strategies", default="local,remote,faaspe")
     parser.add_argument(
         "--variants",
@@ -548,6 +503,10 @@ def main():
         with open(model_path, "w") as f:
             json.dump(model, f, indent=2, sort_keys=True)
             f.write("\n")
+    write_variant_config_snapshot(
+        output_dir / "placement_variants.json",
+        load_variant_config(args.variant_config),
+    )
     rows = run_matrix(args, output_dir, container_result_dir, model)
     print("RECOMMENDATIONS_JSON")
     print(json.dumps(recommendations, indent=2, sort_keys=True))
