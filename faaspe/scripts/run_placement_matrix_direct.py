@@ -303,7 +303,7 @@ def main():
     parser.add_argument("--depths", default=DEFAULT_DEPTHS)
     parser.add_argument("--object-sizes", default=DEFAULT_OBJECT_SIZES)
     parser.add_argument("--calibration-object-sizes", default=DEFAULT_CALIBRATION_OBJECT_SIZES)
-    parser.add_argument("--key-count", type=int, default=128)
+    parser.add_argument("--key-count", type=int, default=1)
     parser.add_argument("--linear-start-depth", type=int, default=4)
     parser.add_argument("--object-size-margin", type=float, default=0.05)
     parser.add_argument("--default-object-size-threshold", type=int, default=102400)

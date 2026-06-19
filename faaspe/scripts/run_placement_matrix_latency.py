@@ -144,7 +144,7 @@ def main():
     parser.add_argument("--default-object-size-threshold", type=int, default=102400)
     parser.add_argument("--trigger-func-name", default="NONE")
     parser.add_argument("--trigger-sanity-threshold", type=int, default=0)
-    parser.add_argument("--key-count", type=int, default=128)
+    parser.add_argument("--key-count", type=int, default=1)
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--skip-calibration", action="store_true")
     parser.add_argument("--calibration-dir", default="")

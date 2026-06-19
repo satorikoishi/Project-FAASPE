@@ -7,7 +7,7 @@ from jkv_client import JKVClient
 
 
 logging.basicConfig(format="%(message)s", level=logging.INFO)
-DEFAULT_KEY_COUNT = 128
+DEFAULT_KEY_COUNT = 1
 
 
 class PlacementMatrix(Benchmark):
