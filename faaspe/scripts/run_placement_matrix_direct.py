@@ -14,6 +14,7 @@ DEFAULT_OBJECT_SIZES = "1024,10240,102400,1048576"
 DEFAULT_CALIBRATION_OBJECT_SIZES = "1024,4096,10240,32768,65536,102400,262144,524288,1048576,2097152"
 PUSH_ADDR = os.getenv("PUSH_ADDR", "tcp://10.10.1.1:50053")
 PULL_ADDR = os.getenv("PULL_ADDR", "tcp://10.10.1.1:50054")
+DEFAULT_MODEL_PATH = ROOT / "lib" / "placement_latency_model.json"
 
 
 def parse_int_list(value):
@@ -138,6 +139,20 @@ def latest_row(path):
     return rows[-1] if rows else {}
 
 
+def load_latency_model(path):
+    with open(path) as f:
+        return json.load(f)
+
+
+def fixed_recommendations(model, model_path):
+    return {
+        "calibration_source": "fixed",
+        "placement_latency_model_file": str(model_path),
+        "placement_latency_model_env_path": Path(model_path).name,
+        "placement_latency_model": model,
+    }
+
+
 def calibration_params(args, result_dir):
     return {
         "BENCH_NAME": "placement-calibration",
@@ -220,9 +235,10 @@ def run_calibration(args, output_dir, container_result_dir):
 def run_matrix(args, output_dir, container_result_dir, model):
     rows = []
     model_json = json.dumps(model, sort_keys=True)
+    strategies = [item.strip() for item in args.strategies.split(",") if item.strip()]
     for depth in parse_int_list(args.depths):
         for object_size in parse_int_list(args.object_sizes):
-            for strategy in ("local", "remote", "faaspe"):
+            for strategy in strategies:
                 params = {
                     "BENCH_NAME": "placement-matrix",
                     "NUM_OPERATION": args.samples,
@@ -238,10 +254,25 @@ def run_matrix(args, output_dir, container_result_dir, model):
                 }
                 if strategy == "faaspe" and args.inject_calibrated_model:
                     params["FAASPE_PLACEMENT_LATENCY_MODEL_JSON"] = model_json
+                if args.enable_invocation_log:
+                    log_name = (
+                        f"invocations_depth{depth}_size{object_size}_{strategy}.jsonl"
+                    )
+                    params["FAASPE_INVOCATION_LOG_ENABLED"] = "1"
+                    params["FAASPE_INVOCATION_LOG_BACKEND"] = "memory"
+                    params["FAASPE_INVOCATION_LOG_PATH"] = (
+                        f"{container_result_dir}/{log_name}"
+                    )
                 invoke("placement-matrix", params)
                 file_name = f"matrix_depth{depth}_size{object_size}_{strategy}.csv"
                 result_csv = output_dir / file_name
                 docker_cp("placement-matrix", f"{container_result_dir}/temp.csv", result_csv)
+                if args.enable_invocation_log:
+                    docker_cp(
+                        "placement-matrix",
+                        f"{container_result_dir}/{log_name}",
+                        output_dir / log_name,
+                    )
                 result = latest_row(result_csv)
                 rows.append(
                     {
@@ -277,12 +308,28 @@ def main():
     parser.add_argument("--object-size-margin", type=float, default=0.05)
     parser.add_argument("--default-object-size-threshold", type=int, default=102400)
     parser.add_argument("--inject-calibrated-model", action="store_true")
+    parser.add_argument("--run-calibration", action="store_true")
+    parser.add_argument("--model-path", default=str(DEFAULT_MODEL_PATH))
+    parser.add_argument("--strategies", default="local,remote,faaspe")
+    parser.add_argument("--enable-invocation-log", action="store_true")
     args = parser.parse_args()
 
     output_dir = ROOT / "results" / args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     container_result_dir = f"/usr/src/app/results/{args.output_dir}"
-    recommendations, model = run_calibration(args, output_dir, container_result_dir)
+    if args.run_calibration:
+        recommendations, model = run_calibration(args, output_dir, container_result_dir)
+    else:
+        model = load_latency_model(args.model_path)
+        recommendations = fixed_recommendations(model, args.model_path)
+        rec_path = output_dir / "placement_calibration_recommendations.json"
+        with open(rec_path, "w") as f:
+            json.dump(recommendations, f, indent=2, sort_keys=True)
+            f.write("\n")
+        model_path = output_dir / "placement_latency_model.json"
+        with open(model_path, "w") as f:
+            json.dump(model, f, indent=2, sort_keys=True)
+            f.write("\n")
     rows = run_matrix(args, output_dir, container_result_dir, model)
     print("RECOMMENDATIONS_JSON")
     print(json.dumps(recommendations, indent=2, sort_keys=True))
