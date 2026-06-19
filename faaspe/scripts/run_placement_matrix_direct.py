@@ -47,6 +47,7 @@ VARIANTS = {
         "function_env": {
             "FAASPE_PROFILE_ENABLED": "0",
             "FAASPE_PROFILER_ENABLED": "0",
+            "FAASPE_ACCESS_META_ENABLED": "1",
             "FAASPE_FALLBACK_ENABLED": "0",
             "FAASPE_ARBITER_FORCE_UNKNOWN": "0",
         },
@@ -58,6 +59,7 @@ VARIANTS = {
         "function_env": {
             "FAASPE_PROFILE_ENABLED": "0",
             "FAASPE_PROFILER_ENABLED": "0",
+            "FAASPE_ACCESS_META_ENABLED": "1",
             "FAASPE_FALLBACK_ENABLED": "0",
             "FAASPE_ARBITER_FORCE_UNKNOWN": "0",
         },

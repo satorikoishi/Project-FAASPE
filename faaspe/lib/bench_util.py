@@ -5,7 +5,7 @@ import csv
 import random
 import time
 from arbiter import get_arbiter
-from profiler import get_async_profiler, get_profiler, profile_enabled
+from profiler import env_enabled, get_async_profiler, get_profiler, profile_enabled
 from storage_heartbeat import get_storage_heartbeat_monitor
 
 
@@ -180,6 +180,8 @@ def async_profiler_record_fast(record):
     _async_profiler().record_fast(record)
 
 def metadata_collection_enabled():
+    if "FAASPE_ACCESS_META_ENABLED" in os.environ:
+        return env_enabled("FAASPE_ACCESS_META_ENABLED", "1")
     return profile_enabled()
 
 def profile_sample_selected():
