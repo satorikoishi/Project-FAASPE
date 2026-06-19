@@ -87,6 +87,13 @@ def read_rows(path):
         return list(csv.DictReader(f))
 
 
+def read_jsonl(path):
+    if not path or not path.exists():
+        return []
+    with open(path) as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
 def write_csv(path, rows):
     if not rows:
         return
@@ -224,7 +231,72 @@ def placement_correct_rate(row, oracle_side):
     return func_count / num_op
 
 
-def add_oracle_metrics(rows):
+def record_side(record, fallback_variant=""):
+    selected_side = record.get("selected_side")
+    if selected_side == "compute":
+        return "local"
+    if selected_side == "storage":
+        return "remote"
+
+    raw_placement = record.get("raw_placement")
+    if raw_placement == "native":
+        return "local"
+    if raw_placement == "func":
+        return "remote"
+
+    if fallback_variant == "local":
+        return "local"
+    if fallback_variant == "remote":
+        return "remote"
+    return ""
+
+
+def record_latency_us(record):
+    value = record.get("actual_execution_latency_us")
+    if value not in ("", None):
+        return float(value)
+    value = record.get("actual_ns")
+    if value not in ("", None):
+        return float(value) / 1000.0
+    return 0.0
+
+
+def normalized_regret(row, oracle, output_dir):
+    source_log = row.get("source_invocation_log", "")
+    oracle_log = oracle.get("source_invocation_log", "")
+    if not source_log or not oracle_log:
+        return ""
+
+    row_records = read_jsonl(output_dir / source_log)
+    oracle_records = read_jsonl(output_dir / oracle_log)
+    if not row_records or not oracle_records:
+        return ""
+
+    count = min(len(row_records), len(oracle_records))
+    if count <= 0:
+        return ""
+
+    oracle_side = oracle["oracle_side"]
+    regret_cost_us = 0.0
+    oracle_cost_us = 0.0
+    for idx in range(count):
+        oracle_latency_us = record_latency_us(oracle_records[idx])
+        actual_latency_us = record_latency_us(row_records[idx])
+        if oracle_latency_us <= 0:
+            continue
+        oracle_cost_us += oracle_latency_us
+        side = record_side(row_records[idx], row.get("variant", ""))
+        if side == oracle_side:
+            regret_cost_us += oracle_latency_us
+        else:
+            regret_cost_us += actual_latency_us
+
+    if oracle_cost_us <= 0:
+        return ""
+    return regret_cost_us / oracle_cost_us
+
+
+def add_oracle_metrics(rows, output_dir=None):
     baselines = {}
     for row in rows:
         if row["variant"] not in ("local", "remote"):
@@ -250,6 +322,7 @@ def add_oracle_metrics(rows):
             "oracle_side": side,
             "oracle_median_ms": float(oracle["median_ms"]),
             "oracle_total_time_s": float(oracle["total_time_s"]),
+            "source_invocation_log": oracle.get("source_invocation_log", ""),
         }
 
     metric_rows = []
@@ -281,6 +354,12 @@ def add_oracle_metrics(rows):
                     ),
                 }
             )
+            if output_dir is not None:
+                metric_row["normalized_regret"] = normalized_regret(
+                    row,
+                    oracle,
+                    output_dir,
+                )
         metric_rows.append(metric_row)
     return metric_rows
 
@@ -447,11 +526,12 @@ def run_matrix(args, output_dir, container_result_dir, model):
                         ),
                         "profiler_override": result.get("profiler_override", ""),
                         "source_csv": file_name,
+                        "source_invocation_log": log_name if args.enable_invocation_log else "",
                     }
                 )
     summary_path = output_dir / "placement_matrix_latency_summary.csv"
     write_csv(summary_path, rows)
-    metric_rows = add_oracle_metrics(rows)
+    metric_rows = add_oracle_metrics(rows, output_dir)
     metrics_path = output_dir / "placement_matrix_oracle_metrics.csv"
     write_csv(metrics_path, metric_rows)
     return metric_rows
@@ -516,8 +596,9 @@ def main():
         printable.setdefault("oracle_side", "")
         printable.setdefault("placement_correct_rate", "")
         printable.setdefault("normalized_total_latency", "")
+        printable.setdefault("normalized_regret", "")
         print(
-            "{depth},{object_size},{variant},{median_ms},{native_count},{func_count},{oracle_side},{placement_correct_rate},{normalized_total_latency}".format(
+            "{depth},{object_size},{variant},{median_ms},{native_count},{func_count},{oracle_side},{placement_correct_rate},{normalized_total_latency},{normalized_regret}".format(
                 **printable
             )
         )
