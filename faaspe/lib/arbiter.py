@@ -260,6 +260,18 @@ class Arbiter:
 
     def _explain(self, function_name, params=None):
         params = params or {}
+        if os.getenv("FAASPE_ARBITER_FORCE_UNKNOWN", "0") not in {
+            "",
+            "0",
+            "false",
+            "False",
+            "no",
+            "off",
+        }:
+            return PlacementDecision(
+                self.unknown_default,
+                "unsupported_static_analysis",
+            )
         profile = self.profiles.get(function_name)
         if profile is None:
             return PlacementDecision(

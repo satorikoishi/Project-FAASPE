@@ -193,6 +193,23 @@ def test_profiler_recheck_allowed_when_static_profile_missing():
     assert profile.recheck_count == 1
 
 
+def test_arbiter_force_unknown_env(monkeypatch):
+    monkeypatch.setenv("FAASPE_ARBITER_FORCE_UNKNOWN", "1")
+    decision = Arbiter().explain("list-traversal", {"depth": 1})
+    assert decision.reason == "unsupported_static_analysis"
+
+
+def test_profiler_explores_when_static_profile_forced_unknown(monkeypatch):
+    monkeypatch.setenv("FAASPE_ARBITER_FORCE_UNKNOWN", "1")
+    arbiter = Arbiter()
+    profiler = Profiler(enabled=True, explore_on_unknown=True)
+
+    plan = profiler.choose("list-traversal", {"depth": 1}, arbiter)
+
+    assert plan.fallback_active
+    assert plan.reason == "explore"
+
+
 def test_arbiter_ignores_object_size_param_and_depth_threshold(monkeypatch):
     monkeypatch.delenv("FAASPE_STORAGE_DEPTH_THRESHOLD", raising=False)
     arbiter = Arbiter(local_access_us=200, storage_func_us=900)

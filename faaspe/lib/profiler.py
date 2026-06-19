@@ -111,9 +111,11 @@ class Profiler:
         recheck_interval=0,
         history_limit=200,
         fallback_enabled=True,
+        explore_on_unknown=False,
     ):
         self.enabled = enabled
         self.fallback_enabled = fallback_enabled
+        self.explore_on_unknown = explore_on_unknown
         self.violation_factor = violation_factor
         self.violation_window = violation_window
         self.violation_limit = violation_limit
@@ -135,6 +137,7 @@ class Profiler:
             recheck_interval=int(os.getenv("FAASPE_PROFILER_RECHECK_INTERVAL", 0)),
             history_limit=int(os.getenv("FAASPE_PROFILER_HISTORY_LIMIT", 200)),
             fallback_enabled=os.getenv("FAASPE_FALLBACK_ENABLED", "1") != "0",
+            explore_on_unknown=env_enabled("FAASPE_PROFILER_EXPLORE_ON_UNKNOWN", "0"),
         )
 
     def choose(self, function_name, params, arbiter):
@@ -155,6 +158,14 @@ class Profiler:
 
         profile = self._profile(function_name)
         profile.invocations += 1
+        if (
+            self.fallback_enabled
+            and self.explore_on_unknown
+            and decision.reason == "unsupported_static_analysis"
+            and not profile.override_placement
+            and not profile.exploring
+        ):
+            self._start_explore(profile)
 
         if self.fallback_enabled and profile.exploring:
             placement = self._next_explore_placement(profile)
