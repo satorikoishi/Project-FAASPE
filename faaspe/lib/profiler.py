@@ -181,11 +181,28 @@ class Profiler:
 
         return self._plan_from_decision(decision, expected or 0.0)
 
-    def record(self, function_name, placement, latency_us, plan=None):
+    def record(
+        self,
+        function_name,
+        placement,
+        latency_us,
+        plan=None,
+        params=None,
+        access_meta=None,
+        arbiter=None,
+    ):
         if not self.enabled or placement not in PLACEMENTS:
             return
 
         plan = plan or self._last_plan
+        expected_us = self._posthoc_expected_us(
+            function_name,
+            placement,
+            plan,
+            params or {},
+            access_meta,
+            arbiter,
+        )
         profile = self._profile(function_name)
         self._append_history(profile.history[placement], latency_us)
 
@@ -198,10 +215,10 @@ class Profiler:
             profile.fallback_invocations += 1
             return
 
-        if plan.expected_us <= 0:
+        if expected_us <= 0:
             return
 
-        violation = latency_us > plan.expected_us * self.violation_factor
+        violation = latency_us > expected_us * self.violation_factor
         profile.recent_violations.append(violation)
         while len(profile.recent_violations) > self.violation_window:
             profile.recent_violations.popleft()
@@ -271,6 +288,28 @@ class Profiler:
 
     def _append_history(self, history, latency_us):
         history.append(latency_us)
+
+    def _posthoc_expected_us(
+        self,
+        function_name,
+        placement,
+        plan,
+        params,
+        access_meta,
+        arbiter,
+    ):
+        if arbiter is None or access_meta is None:
+            return plan.expected_us
+        object_size = getattr(access_meta, "max_object_size", -1)
+        if placement != "native" or object_size is None or object_size < 0:
+            return plan.expected_us
+        expected = arbiter.estimate_latency_us(
+            function_name,
+            params,
+            placement,
+            observed_object_size=object_size,
+        )
+        return expected if expected is not None else plan.expected_us
 
     def _should_recheck(self, profile, decision):
         if self.recheck_interval <= 0:

@@ -15,7 +15,7 @@ from access_meta import (  # noqa: E402
     reset_invocation_access_meta,
     snapshot_invocation_access_meta,
 )
-from arbiter import Arbiter  # noqa: E402
+from arbiter import Arbiter, PlacementLatencyModel  # noqa: E402
 from benchmark import Benchmark  # noqa: E402
 from profiler import AsyncProfiler, Profiler  # noqa: E402
 
@@ -193,11 +193,63 @@ def test_profiler_recheck_allowed_when_static_profile_missing():
     assert profile.recheck_count == 1
 
 
-def test_arbiter_storage_depth_threshold_can_include_depth_four(monkeypatch):
+def test_arbiter_ignores_object_size_param_and_depth_threshold(monkeypatch):
     monkeypatch.delenv("FAASPE_STORAGE_DEPTH_THRESHOLD", raising=False)
-    assert Arbiter().explain("list-traversal", {"depth": 4}).placement == "native"
+    arbiter = Arbiter(local_access_us=200, storage_func_us=900)
+    small = arbiter.explain("list-traversal", {"depth": 1, "object_size": 1024})
+    large = arbiter.explain("list-traversal", {"depth": 1, "object_size": 1024 * 1024})
+    assert small.placement == "native"
+    assert large.placement == "native"
+    assert small.compute_latency_us == large.compute_latency_us
+    assert small.object_size is None
+    assert large.object_size is None
 
     monkeypatch.setenv("FAASPE_STORAGE_DEPTH_THRESHOLD", "4")
-    decision = Arbiter().explain("list-traversal", {"depth": 4})
-    assert decision.placement == "func"
-    assert decision.reason == "calibrated_depth_threshold"
+    decision = Arbiter(local_access_us=200, storage_func_us=900).explain(
+        "list-traversal",
+        {"depth": 4},
+    )
+    assert decision.placement == "native"
+    assert decision.reason == "latency_model_depth"
+
+
+def test_profiler_uses_observed_object_size_for_violation_check():
+    model = PlacementLatencyModel(
+        linear_start_depth=4,
+        small_depth_cache_latency_us={},
+        cache_object_size_latency_us=[
+            {"max_bytes": 1024, "latency_us": 200},
+            {"max_bytes": 1024 * 1024, "latency_us": 2000},
+        ],
+        storage_base_latency_us=900,
+    )
+    arbiter = Arbiter(latency_model=model)
+    profiler = Profiler(
+        enabled=True,
+        violation_factor=1.5,
+        violation_limit=1,
+        explore_samples=1,
+    )
+    plan = profiler.choose(
+        "placement-matrix",
+        {"depth": 1, "object_size": 1024 * 1024},
+        arbiter,
+    )
+    assert plan.placement == "native"
+    assert plan.expected_us == 200
+
+    access_meta = InvocationAccessMeta(
+        get_count=1,
+        cache_hits=1,
+        max_object_size=1024 * 1024,
+    )
+    profiler.record(
+        "placement-matrix",
+        "native",
+        2500,
+        params={"depth": 1, "object_size": 1024 * 1024},
+        access_meta=access_meta,
+        arbiter=arbiter,
+    )
+
+    assert not profiler._profile("placement-matrix").exploring

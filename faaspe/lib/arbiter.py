@@ -153,6 +153,11 @@ class PlacementLatencyModel:
     def storage_latency_us(self, storage_load_us=0.0):
         return self.storage_base_latency_us + float(storage_load_us or 0.0)
 
+    def default_object_size_bytes(self):
+        if not self.cache_object_size_latency_us:
+            return int(os.getenv("FAASPE_DEFAULT_OBJECT_SIZE_BYTES", "1024"))
+        return self.cache_object_size_latency_us[0]["max_bytes"]
+
 
 class Arbiter:
     """Low-overhead placement arbiter driven by registered RPN profiles.
@@ -260,33 +265,32 @@ class Arbiter:
             return PlacementDecision(
                 self.unknown_default,
                 "unsupported_static_analysis",
-                object_size=self._object_size(params),
             )
 
-        object_size = self._object_size(params)
         try:
             access_depth = RPNExpression(profile.get("rpn", "")).evaluate(params)
         except RPNError:
             return PlacementDecision(
                 self.unknown_default,
                 "unsupported_static_analysis",
-                object_size=object_size,
             )
 
         storage_load_us = float(params.get("storage_load_us", 0) or 0)
-        local_latency = self.latency_model.cache_latency_us(access_depth, object_size)
+        assumed_object_size = self.latency_model.default_object_size_bytes()
+        local_latency = self.latency_model.cache_latency_us(
+            access_depth,
+            assumed_object_size,
+        )
         storage_latency = self.latency_model.storage_latency_us(storage_load_us)
         if storage_load_us > 0 and local_latency <= storage_latency:
             reason = "storage_load"
-        elif object_size > 0:
-            reason = "latency_model_object_size"
         else:
             reason = "latency_model_depth"
         return PlacementDecision(
             "native" if local_latency <= storage_latency else "func",
             reason,
             access_depth=access_depth,
-            object_size=object_size,
+            object_size=None,
             compute_latency_us=local_latency,
             storage_latency_us=storage_latency,
         )
@@ -300,7 +304,13 @@ class Arbiter:
         except RPNError:
             return None
 
-    def estimate_latency_us(self, function_name, params=None, placement=None):
+    def estimate_latency_us(
+        self,
+        function_name,
+        params=None,
+        placement=None,
+        observed_object_size=None,
+    ):
         params = params or {}
         placement = placement or self._decide(function_name, params)
 
@@ -308,7 +318,15 @@ class Arbiter:
             access_depth = self.access_depth(function_name, params)
             if access_depth is None:
                 return None
-            return self.latency_model.cache_latency_us(access_depth, self._object_size(params))
+            object_size = (
+                int(observed_object_size)
+                if observed_object_size is not None and int(observed_object_size) >= 0
+                else self.latency_model.default_object_size_bytes()
+            )
+            return self.latency_model.cache_latency_us(
+                access_depth,
+                object_size,
+            )
         if placement == "func":
             return self.latency_model.storage_latency_us(params.get("storage_load_us", 0))
         return None

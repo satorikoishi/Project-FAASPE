@@ -132,11 +132,18 @@ def arbiter_overhead_us():
 def profiler_overhead_us():
     return get_profiler().last_overhead_us
 
-def record_profile(strategy, function_name, placement, latency_us):
+def record_profile(strategy, function_name, placement, latency_us, params=None, access_meta=None):
     global _LAST_PROFILER_UPDATE_US
     if strategy == 'faaspe':
         started = time.perf_counter()
-        get_profiler().record(function_name, placement, latency_us)
+        get_profiler().record(
+            function_name,
+            placement,
+            latency_us,
+            params=params,
+            access_meta=access_meta,
+            arbiter=get_arbiter(),
+        )
         _LAST_PROFILER_UPDATE_US = (time.perf_counter() - started) * 1e6
     else:
         _LAST_PROFILER_UPDATE_US = 0.0

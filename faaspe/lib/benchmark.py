@@ -72,10 +72,17 @@ class Benchmark:
             
             latency = op_end_time - op_start_time
             latencies.append(latency)
-            bench_util.record_profile(self.strategy, self.name, placement, latency * 1e6)
+            access_meta = snapshot_invocation_access_meta()
+            bench_util.record_profile(
+                self.strategy,
+                self.name,
+                placement,
+                latency * 1e6,
+                params=placement_params,
+                access_meta=access_meta,
+            )
             if self.strategy == 'faaspe':
                 self.profiler_update_overheads.append(bench_util.profiler_update_overhead_us())
-            access_meta = snapshot_invocation_access_meta()
             self.log_invocation(
                 i,
                 placement_params,
