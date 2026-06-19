@@ -289,7 +289,7 @@ def normalized_regret(row, oracle, output_dir):
         if side == oracle_side:
             regret_cost_us += oracle_latency_us
         else:
-            regret_cost_us += actual_latency_us
+            regret_cost_us += max(actual_latency_us, oracle_latency_us)
 
     if oracle_cost_us <= 0:
         return ""
