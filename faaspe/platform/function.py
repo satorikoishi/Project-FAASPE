@@ -41,9 +41,11 @@ def try_destroy_function(function_name):
 
 def write_arbiter_profile(function_dir, function_name):
     profile = DEFAULT_PROFILES.get(function_name)
-    if not profile:
-        return
     manifest_path = os.path.join(function_dir, PROFILE_MANIFEST)
+    if not profile:
+        if os.path.exists(manifest_path):
+            os.remove(manifest_path)
+        return
     with open(manifest_path, "w") as f:
         json.dump({function_name: profile}, f)
 
