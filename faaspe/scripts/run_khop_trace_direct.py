@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FUNC_NAME = "k-hop"
 DEFAULT_TRACE_PATH = ROOT / "functions" / FUNC_NAME / "khop_trace.csv"
 DEFAULT_VARIANTS = "local,remote,faaspe,static-only,arbiter-only,runtime-only,khop-oracle"
+KHOP_FAASPE_RECHECK_INTERVAL = "100"
 
 
 def resolve_trace_path(value):
@@ -153,6 +154,11 @@ def run_trace(args, output_dir, container_result_dir, model):
             "FAASPE_INVOCATION_LOG_PATH": f"{container_result_dir}/{log_name}",
         }
         params.update(spec.get("function_env", {}))
+        if variant == "faaspe":
+            params.setdefault(
+                "FAASPE_PROFILER_RECHECK_INTERVAL",
+                KHOP_FAASPE_RECHECK_INTERVAL,
+            )
         if strategy == "faaspe" and args.inject_calibrated_model:
             params["FAASPE_PLACEMENT_LATENCY_MODEL_JSON"] = model_json
 
