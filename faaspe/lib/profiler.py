@@ -10,10 +10,6 @@ from dataclasses import dataclass, field
 PLACEMENTS = ("native", "func")
 
 
-def opposite_placement(placement):
-    return "func" if placement == "native" else "native"
-
-
 @dataclass
 class InvocationPlan:
     placement: str
@@ -105,6 +101,7 @@ class Profiler:
         self,
         enabled=True,
         violation_factor=1.5,
+        violation_slack_us=200.0,
         violation_window=10,
         violation_limit=5,
         explore_samples=10,
@@ -117,6 +114,7 @@ class Profiler:
         self.fallback_enabled = fallback_enabled
         self.explore_on_unknown = explore_on_unknown
         self.violation_factor = violation_factor
+        self.violation_slack_us = violation_slack_us
         self.violation_window = violation_window
         self.violation_limit = violation_limit
         self.explore_samples = explore_samples
@@ -131,6 +129,7 @@ class Profiler:
         return cls(
             enabled=profile_enabled(),
             violation_factor=float(os.getenv("FAASPE_PROFILER_VIOLATION_FACTOR", 1.5)),
+            violation_slack_us=float(os.getenv("FAASPE_PROFILER_VIOLATION_SLACK_US", 200.0)),
             violation_window=int(os.getenv("FAASPE_PROFILER_VIOLATION_WINDOW", 10)),
             violation_limit=int(os.getenv("FAASPE_PROFILER_VIOLATION_LIMIT", 5)),
             explore_samples=int(os.getenv("FAASPE_PROFILER_EXPLORE_SAMPLES", 10)),
@@ -177,17 +176,22 @@ class Profiler:
             return plan
 
         if self.fallback_enabled and profile.override_placement:
-            placement = profile.override_placement
-            reason = "fallback"
             if self._should_recheck(profile, decision):
-                placement = opposite_placement(profile.override_placement)
-                reason = "recheck"
                 profile.recheck_count += 1
+                self._start_explore(profile)
+                placement = self._next_explore_placement(profile)
+                expected = arbiter.estimate_latency_us(function_name, params, placement)
+                plan = self._plan_from_decision(decision, expected or 0.0)
+                plan.placement = placement
+                plan.fallback_active = True
+                plan.reason = "explore"
+                return plan
+            placement = profile.override_placement
             expected = arbiter.estimate_latency_us(function_name, params, placement)
             plan = self._plan_from_decision(decision, expected or 0.0)
             plan.placement = placement
             plan.fallback_active = True
-            plan.reason = reason
+            plan.reason = "fallback"
             return plan
 
         return self._plan_from_decision(decision, expected or 0.0)
@@ -229,7 +233,9 @@ class Profiler:
         if expected_us <= 0:
             return
 
-        violation = latency_us > expected_us * self.violation_factor
+        violation = latency_us > (
+            expected_us * self.violation_factor + self.violation_slack_us
+        )
         profile.recent_violations.append(violation)
         while len(profile.recent_violations) > self.violation_window:
             profile.recent_violations.popleft()

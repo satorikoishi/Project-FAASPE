@@ -71,7 +71,7 @@ FAASPE_PROFILE_ENABLED=1
 FAASPE_PROFILER_ENABLED=1
 FAASPE_FALLBACK_ENABLED=1
 FAASPE_PROFILER_EXPLORE_ON_UNKNOWN=1
-FAASPE_PROFILER_RECHECK_INTERVAL=0
+FAASPE_PROFILER_RECHECK_INTERVAL=100
 ```
 
 JKV cache env:
@@ -82,8 +82,9 @@ JKV_OBJECT_SIZE_TRIGGER_ENABLED=0
 
 Expected behavior: Arbiter never uses static RPN profiles. The initial placement
 comes from `FAASPE_UNKNOWN_PLACEMENT` if set, otherwise the repository default.
-Profiler immediately explores placements for unknown functions and then uses the
-lower observed-latency side as fallback override.
+Profiler immediately explores placements for unknown functions, uses the lower
+observed-latency side as fallback override, and periodically re-enters
+exploration after the configured recheck interval.
 
 ## Notes
 
