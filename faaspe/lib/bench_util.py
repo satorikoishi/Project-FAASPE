@@ -113,6 +113,10 @@ def strategy_placement(s, function_name=None, params=None):
     elif s == 'trace-oracle':
         depth = int(float(params.get('depth', 0) or 0))
         return 'native' if depth in (1, 2) else 'func'
+    elif s == 'storage-load-oracle':
+        depth = int(float(params.get('depth', 0) or 0))
+        storage_load_us = float(params.get('trace_storage_load_us', 0) or 0)
+        return 'func' if depth == 8 and storage_load_us <= 0 else 'native'
     else:
         raise ValueError('Unknown Strategy')
 
@@ -128,6 +132,9 @@ def params_with_storage_load(params):
 
 def attach_storage_heartbeat_client(client):
     get_storage_heartbeat_monitor().attach_client(client)
+
+def sample_storage_heartbeat(extra_load_us):
+    return get_storage_heartbeat_monitor().sample_once(extra_load_us)
 
 def arbiter_overhead_us():
     return get_arbiter().last_overhead_us

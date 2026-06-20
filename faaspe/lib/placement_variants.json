@@ -77,5 +77,13 @@
     "cache_env": {
       "JKV_OBJECT_SIZE_TRIGGER_ENABLED": "0"
     }
+  },
+  "storage-load-oracle": {
+    "strategy": "storage-load-oracle",
+    "label": "storage-load-oracle",
+    "function_env": {},
+    "cache_env": {
+      "JKV_OBJECT_SIZE_TRIGGER_ENABLED": "0"
+    }
   }
 }

@@ -32,6 +32,7 @@ class StorageHeartbeatMonitor:
         enabled=False,
         interval_ms=500,
         trace_path="",
+        manual=False,
     ):
         self.push_addr = push_addr
         self.pull_addr = pull_addr
@@ -39,6 +40,7 @@ class StorageHeartbeatMonitor:
         self.interval_ms = max(1, int(interval_ms))
         self.trace = load_trace(trace_path)
         self.trace_path = trace_path
+        self.manual = manual
         self._lock = threading.Lock()
         self._latest_load_us = 0.0
         self._latest_requested_load_us = 0
@@ -58,10 +60,11 @@ class StorageHeartbeatMonitor:
             enabled=env_enabled("FAASPE_STORAGE_HEARTBEAT_ENABLED", "0"),
             interval_ms=int(os.getenv("FAASPE_STORAGE_HEARTBEAT_INTERVAL_MS", "500")),
             trace_path=os.getenv("FAASPE_STORAGE_HEARTBEAT_TRACE", ""),
+            manual=env_enabled("FAASPE_STORAGE_HEARTBEAT_MANUAL", "0"),
         )
 
     def start(self):
-        if not self.enabled or self._thread is not None:
+        if not self.enabled or self.manual or self._thread is not None:
             return
         if self._client is None and (not self.push_addr or not self.pull_addr):
             return
@@ -96,6 +99,28 @@ class StorageHeartbeatMonitor:
         self.start()
         with self._lock:
             return self._sample_count
+
+    def sample_once(self, extra_load_us):
+        if not self.enabled:
+            return False
+        client = self._client
+        if client is None:
+            if not self.push_addr or not self.pull_addr:
+                return False
+            client = JKVClient(self.push_addr, self.pull_addr)
+            with self._lock:
+                if self._client is None:
+                    self._client = client
+        self._sequence += 1
+        started = time.perf_counter()
+        ok = False
+        try:
+            ok, _ = client.heartbeat(self._sequence, extra_load_us)
+        except Exception:
+            ok = False
+        observed_us = (time.perf_counter() - started) * 1e6
+        self._record_sample(extra_load_us, observed_us, ok)
+        return ok
 
     def snapshot(self):
         self.start()

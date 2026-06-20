@@ -16,6 +16,12 @@ and does not route responses to a specific client, so using a separate heartbeat
 client would allow heartbeat and workload responses to be delivered to the wrong
 receiver.
 
+Heartbeat is a runtime/profiler signal. Ablation variants that disable the
+profiler/runtime feedback path, such as `static-only` and `arbiter-only`, should
+leave `FAASPE_STORAGE_HEARTBEAT_ENABLED=0`. Workloads that study storage-load
+adaptation should enable it only for variants that are meant to consume runtime
+load feedback, such as `faaspe` and `runtime-only`.
+
 ## Configuration
 
 Enable heartbeat collection in the function container environment:
@@ -40,6 +46,17 @@ duration_ms,extra_load_us
 
 Rows are advanced by elapsed wall-clock time and repeat cyclically. Each
 heartbeat attaches the current row's `extra_load_us`.
+
+For deterministic trace-driven experiments, set:
+
+```text
+FAASPE_STORAGE_HEARTBEAT_MANUAL=1
+```
+
+Manual mode disables the background thread. The workload calls the heartbeat
+sampler explicitly, for example once every five requests, using the
+`extra_load_us` from its fixed request trace. This keeps all variants on the
+same request sequence without relying on wall-clock pacing.
 
 ## Arbiter Consumption
 
