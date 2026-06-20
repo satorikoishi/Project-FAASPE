@@ -69,5 +69,13 @@
     "cache_env": {
       "JKV_OBJECT_SIZE_TRIGGER_ENABLED": "0"
     }
+  },
+  "trace-oracle": {
+    "strategy": "trace-oracle",
+    "label": "trace-oracle",
+    "function_env": {},
+    "cache_env": {
+      "JKV_OBJECT_SIZE_TRIGGER_ENABLED": "0"
+    }
   }
 }

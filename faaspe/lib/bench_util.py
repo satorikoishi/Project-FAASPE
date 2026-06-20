@@ -110,6 +110,9 @@ def strategy_placement(s, function_name=None, params=None):
     elif s == 'faaspe':
         params = params_with_storage_load(params)
         return get_profiler().choose(function_name, params, get_arbiter()).placement
+    elif s == 'trace-oracle':
+        depth = int(float(params.get('depth', 0) or 0))
+        return 'native' if depth in (1, 2) else 'func'
     else:
         raise ValueError('Unknown Strategy')
 

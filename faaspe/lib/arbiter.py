@@ -12,6 +12,7 @@ DEFAULT_PROFILES = {
     "list-traversal": {"rpn": "depth"},
     "list-traversal-trace": {"rpn": "depth"},
     "placement-matrix": {"rpn": "depth"},
+    "placement-trace": {"rpn": "depth"},
     "storage-load-trace": {"rpn": "depth"},
     "ycsb": {"rpn": "1"},
     "ycsb-t": {"rpn": "2"},
