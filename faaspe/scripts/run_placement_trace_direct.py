@@ -1,7 +1,6 @@
 import argparse
-import csv
 import json
-import random
+import shutil
 from pathlib import Path
 
 from run_placement_matrix_direct import (
@@ -28,21 +27,15 @@ from run_placement_matrix_direct import (
 
 ROOT = Path(__file__).resolve().parents[1]
 FUNC_NAME = "placement-trace"
+DEFAULT_TRACE_PATH = ROOT / "functions" / FUNC_NAME / "depth_trace.csv"
 DEFAULT_VARIANTS = "local,remote,faaspe,static-only,arbiter-only,runtime-only,trace-oracle"
 
 
-def parse_int_list(value):
-    return [int(item.strip()) for item in value.split(",") if item.strip()]
-
-
-def write_depth_trace(path, samples, depths, seed):
-    rng = random.Random(seed)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["op_id", "depth"])
-        writer.writeheader()
-        for idx in range(samples):
-            writer.writerow({"op_id": idx, "depth": rng.choice(depths)})
+def resolve_trace_path(value):
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return ROOT / path
 
 
 def docker_cp_to_container(function_name, local_path, container_path):
@@ -124,14 +117,12 @@ def run_trace(args, output_dir, container_result_dir, model):
             known = ", ".join(sorted(variant_config))
             raise ValueError(f"Unknown variant '{variant}'. Known variants: {known}")
 
-    trace_path = output_dir / "depth_trace.csv"
-    write_depth_trace(
-        trace_path,
-        args.samples,
-        parse_int_list(args.trace_depths),
-        args.trace_seed,
-    )
-    docker_cp_to_container(FUNC_NAME, trace_path, "/usr/src/app/depth_trace.csv")
+    trace_path = resolve_trace_path(args.trace_file)
+    if not trace_path.exists():
+        raise FileNotFoundError(f"trace file not found: {trace_path}")
+    output_trace_path = output_dir / "depth_trace.csv"
+    shutil.copyfile(trace_path, output_trace_path)
+    docker_cp_to_container(FUNC_NAME, output_trace_path, "/usr/src/app/depth_trace.csv")
 
     jkv_dir = Path(args.jkv_dir)
     last_cache_env = None
@@ -170,7 +161,7 @@ def run_trace(args, output_dir, container_result_dir, model):
 
         if args.restart_function_container:
             restart_function_container(FUNC_NAME)
-            docker_cp_to_container(FUNC_NAME, trace_path, "/usr/src/app/depth_trace.csv")
+            docker_cp_to_container(FUNC_NAME, output_trace_path, "/usr/src/app/depth_trace.csv")
 
         invoke(FUNC_NAME, params)
         file_name = f"placement_trace_{variant}.csv"
@@ -183,8 +174,7 @@ def run_trace(args, output_dir, container_result_dir, model):
                 "variant": variant,
                 "strategy": strategy,
                 "object_size": args.object_size,
-                "trace_depths": args.trace_depths,
-                "trace_seed": args.trace_seed,
+                "trace_file": str(trace_path),
                 "median_ms": result.get("median", ""),
                 "p90_ms": result.get("p90", ""),
                 "p99_ms": result.get("p99", ""),
@@ -212,8 +202,7 @@ def main():
     parser.add_argument("--output-dir", default="placement-trace-direct")
     parser.add_argument("--samples", type=int, default=300)
     parser.add_argument("--object-size", type=int, default=1024)
-    parser.add_argument("--trace-depths", default="1,2,8")
-    parser.add_argument("--trace-seed", type=int, default=1)
+    parser.add_argument("--trace-file", default=str(DEFAULT_TRACE_PATH))
     parser.add_argument("--key-count", type=int, default=1)
     parser.add_argument("--model-path", default=str(DEFAULT_MODEL_PATH))
     parser.add_argument("--variant-config", default=str(DEFAULT_VARIANT_CONFIG_PATH))
