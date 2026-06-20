@@ -1,0 +1,49 @@
+CloudLab raw log directory:
+/users/jinwei/projects/Project-FAASPE/faaspe/results/revision/dynamic-storage-load-20260620
+
+faaspe:
+rows=300
+selected_side: compute=252, storage=48
+fallback_phase: ""=300
+reason: storage_load=244, latency_model_depth=56
+heartbeat: enabled=1, samples=60
+depth/load/side:
+  depth=1 load=0 compute=112
+  depth=1 load=2000 compute=83
+  depth=8 load=2000 compute=57
+  depth=8 load=0 storage=48
+
+static-only:
+rows=300
+selected_side: compute=195, storage=105
+heartbeat: enabled=0, samples=0
+depth/load/side:
+  depth=1 load=0 compute=112
+  depth=1 load=2000 compute=83
+  depth=8 load=2000 storage=57
+  depth=8 load=0 storage=48
+
+arbiter-only:
+rows=300
+selected_side: compute=195, storage=105
+heartbeat: enabled=0, samples=0
+depth/load/side:
+  depth=1 load=0 compute=112
+  depth=1 load=2000 compute=83
+  depth=8 load=2000 storage=57
+  depth=8 load=0 storage=48
+
+runtime-only:
+rows=300
+selected_side: compute=270, storage=30
+fallback_phase: fallback=239, explore=61
+heartbeat: enabled=1, samples=60
+
+storage-load-oracle:
+rows=300
+selected_side: compute=252, storage=48
+depth/load/side:
+  depth=1 load=0 compute=112
+  depth=1 load=2000 compute=83
+  depth=8 load=2000 compute=57
+  depth=8 load=0 storage=48
