@@ -105,6 +105,48 @@ By default it writes to a timestamped directory such as:
 ~/projects/Project-FAASPE/faaspe/results/revision-full-20260612-153000
 ```
 
+## Placement Accuracy Run
+
+To run the list-traversal placement-accuracy experiment from your PC and
+orchestrate CloudLab through Fabric, use:
+
+```powershell
+cd C:\Users\41045\Projects\Project-FAASPE\faaspe
+python scripts\run_list_traversal_placement_accuracy.py
+```
+
+This runs depths 1, 2, 4, and 8. For each depth and repetition it runs:
+
+- `local`, as the compute-side fixed baseline
+- `remote`, as the storage-side fixed baseline
+- `faaspe-latency`, with profiler enabled and invocation logging disabled
+- `faaspe-log`, with profiler and invocation logging enabled for detailed placement auditing
+
+The summary is written locally under:
+
+```text
+faaspe/results/placement-accuracy-list-traversal-<timestamp>/placement_accuracy.csv
+```
+
+It contains:
+
+```text
+case_id,rep,oracle_side,oracle_latency,faaspe_selected_side,placement_correct,faaspe_latency,normalized_latency
+```
+
+`faaspe_latency` is taken from the no-log `faaspe-latency` run, so
+per-invocation JSONL writing does not perturb the reported latency. Detailed
+per-invocation records are fetched only from the separate `faaspe-log` run.
+
+For a quick check:
+
+```powershell
+python scripts\run_list_traversal_placement_accuracy.py --repetitions 1 --num-operations 20 --skip-build
+```
+
+Use `--skip-build` only when the CloudLab nodes already have the current code
+and the `list-traversal` function image has already been rebuilt.
+
 ## Resume After Failure
 
 Both wrappers pass `--skip-existing`. A completed run directory is skipped when it already has:
