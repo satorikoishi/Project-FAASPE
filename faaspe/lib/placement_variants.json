@@ -85,5 +85,13 @@
     "cache_env": {
       "JKV_OBJECT_SIZE_TRIGGER_ENABLED": "0"
     }
+  },
+  "khop-oracle": {
+    "strategy": "khop-oracle",
+    "label": "khop-oracle",
+    "function_env": {},
+    "cache_env": {
+      "JKV_OBJECT_SIZE_TRIGGER_ENABLED": "0"
+    }
   }
 }

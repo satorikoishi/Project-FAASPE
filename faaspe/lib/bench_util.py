@@ -117,6 +117,9 @@ def strategy_placement(s, function_name=None, params=None):
         depth = int(float(params.get('depth', 0) or 0))
         storage_load_us = float(params.get('trace_storage_load_us', 0) or 0)
         return 'func' if depth == 8 and storage_load_us <= 0 else 'native'
+    elif s == 'khop-oracle':
+        k = int(float(params.get('k', 0) or 0))
+        return 'native' if k == 1 else 'func'
     else:
         raise ValueError('Unknown Strategy')
 

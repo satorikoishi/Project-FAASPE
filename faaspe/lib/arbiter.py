@@ -9,6 +9,7 @@ DEFAULT_PROFILES = {
     "calc-avg": {"rpn": "1"},
     "compute-emulate": {"rpn": "dependent_access"},
     "data-size": {"rpn": "1"},
+    "k-hop": {"rpn": "k 4 *"},
     "list-traversal": {"rpn": "depth"},
     "list-traversal-trace": {"rpn": "depth"},
     "placement-matrix": {"rpn": "depth"},
