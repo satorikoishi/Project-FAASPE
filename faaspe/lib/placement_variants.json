@@ -18,7 +18,9 @@
   "faaspe": {
     "strategy": "faaspe",
     "label": "faaspe",
-    "function_env": {},
+    "function_env": {
+      "FAASPE_PROFILER_EXPLORE_ON_UNKNOWN": "1"
+    },
     "cache_env": {
       "JKV_OBJECT_SIZE_TRIGGER_ENABLED": "1",
       "JKV_OBJECT_SIZE_TRIGGER_THRESHOLD_BYTES": "102400",
