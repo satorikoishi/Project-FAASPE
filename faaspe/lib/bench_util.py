@@ -112,7 +112,8 @@ def strategy_placement(s, function_name=None, params=None):
         return get_profiler().choose(function_name, params, get_arbiter()).placement
     elif s == 'trace-oracle':
         depth = int(float(params.get('depth', 0) or 0))
-        return 'native' if depth in (1, 2) else 'func'
+        object_size = int(float(params.get('object_size', 1024) or 1024))
+        return 'native' if object_size <= 1024 and depth in (1, 2) else 'func'
     elif s == 'storage-load-oracle':
         depth = int(float(params.get('depth', 0) or 0))
         storage_load_us = float(params.get('trace_storage_load_us', 0) or 0)
