@@ -1,0 +1,98 @@
+Remote complete result directory:
+/users/jinwei/projects/Project-FAASPE/faaspe/results/revision/placement-matrix-size-sweep-depth1-paper-sizes-invlog-20260621
+
+Remote tarball prepared by Codex:
+/tmp/placement-matrix-size-sweep-depth1-paper-sizes-invlog-20260621.tar.gz
+
+CloudLab command used:
+cd /users/jinwei/projects/Project-FAASPE/faaspe && python3 scripts/run_placement_matrix_direct.py --output-dir revision/placement-matrix-size-sweep-depth1-paper-sizes-invlog-20260621 --samples 300 --depths 1 --object-sizes 1024,4096,16384,65536,262144,1048576 --key-count 1 --inject-calibrated-model --enable-invocation-log --variants local,remote,faaspe,static-only,arbiter-only,runtime-only
+
+Notes:
+- The run completed successfully on CloudLab.
+- The local sandbox blocked copying the full raw invocation-log directory by scp/ssh stream.
+- placement_matrix_oracle_metrics.csv was copied into this local directory from the completed remote run.
+- The remote directory contains the full raw CSVs, cache logs, placement config snapshots, and all invocation jsonl files listed below.
+
+Remote file list:
+cache_arbiter-only.log 6762
+cache_faaspe.log 6762
+cache_local.log 1127
+cache_runtime-only.log 6762
+cache_static-only.log 6762
+invocations_depth1_size1024_arbiter-only.jsonl 347022
+invocations_depth1_size1024_faaspe.jsonl 347034
+invocations_depth1_size1024_local.jsonl 325851
+invocations_depth1_size1024_remote.jsonl 325384
+invocations_depth1_size1024_runtime-only.jsonl 337898
+invocations_depth1_size1024_static-only.jsonl 346996
+invocations_depth1_size1048576_arbiter-only.jsonl 349125
+invocations_depth1_size1048576_faaspe.jsonl 349064
+invocations_depth1_size1048576_local.jsonl 328668
+invocations_depth1_size1048576_remote.jsonl 326285
+invocations_depth1_size1048576_runtime-only.jsonl 339050
+invocations_depth1_size1048576_static-only.jsonl 349497
+invocations_depth1_size16384_arbiter-only.jsonl 348499
+invocations_depth1_size16384_faaspe.jsonl 348397
+invocations_depth1_size16384_local.jsonl 327368
+invocations_depth1_size16384_remote.jsonl 325915
+invocations_depth1_size16384_runtime-only.jsonl 339356
+invocations_depth1_size16384_static-only.jsonl 348465
+invocations_depth1_size262144_arbiter-only.jsonl 348507
+invocations_depth1_size262144_faaspe.jsonl 348919
+invocations_depth1_size262144_local.jsonl 328003
+invocations_depth1_size262144_remote.jsonl 325977
+invocations_depth1_size262144_runtime-only.jsonl 338616
+invocations_depth1_size262144_static-only.jsonl 348853
+invocations_depth1_size4096_arbiter-only.jsonl 347314
+invocations_depth1_size4096_faaspe.jsonl 347144
+invocations_depth1_size4096_local.jsonl 326112
+invocations_depth1_size4096_remote.jsonl 325456
+invocations_depth1_size4096_runtime-only.jsonl 338254
+invocations_depth1_size4096_static-only.jsonl 347245
+invocations_depth1_size65536_arbiter-only.jsonl 348203
+invocations_depth1_size65536_faaspe.jsonl 348175
+invocations_depth1_size65536_local.jsonl 327205
+invocations_depth1_size65536_remote.jsonl 325653
+invocations_depth1_size65536_runtime-only.jsonl 339126
+invocations_depth1_size65536_static-only.jsonl 348227
+matrix_depth1_size1024_arbiter-only.csv 1884
+matrix_depth1_size1024_faaspe.csv 1293
+matrix_depth1_size1024_local.csv 760
+matrix_depth1_size1024_remote.csv 995
+matrix_depth1_size1024_runtime-only.csv 2186
+matrix_depth1_size1024_static-only.csv 1587
+matrix_depth1_size1048576_arbiter-only.csv 10137
+matrix_depth1_size1048576_faaspe.csv 9559
+matrix_depth1_size1048576_local.csv 9027
+matrix_depth1_size1048576_remote.csv 9265
+matrix_depth1_size1048576_runtime-only.csv 10436
+matrix_depth1_size1048576_static-only.csv 9844
+matrix_depth1_size16384_arbiter-only.csv 5210
+matrix_depth1_size16384_faaspe.csv 4614
+matrix_depth1_size16384_local.csv 4086
+matrix_depth1_size16384_remote.csv 4319
+matrix_depth1_size16384_runtime-only.csv 5511
+matrix_depth1_size16384_static-only.csv 4909
+matrix_depth1_size262144_arbiter-only.csv 8502
+matrix_depth1_size262144_faaspe.csv 7918
+matrix_depth1_size262144_local.csv 7390
+matrix_depth1_size262144_remote.csv 7626
+matrix_depth1_size262144_runtime-only.csv 8798
+matrix_depth1_size262144_static-only.csv 8208
+matrix_depth1_size4096_arbiter-only.csv 3543
+matrix_depth1_size4096_faaspe.csv 2951
+matrix_depth1_size4096_local.csv 2426
+matrix_depth1_size4096_remote.csv 2658
+matrix_depth1_size4096_runtime-only.csv 3846
+matrix_depth1_size4096_static-only.csv 3247
+matrix_depth1_size65536_arbiter-only.csv 6857
+matrix_depth1_size65536_faaspe.csv 6270
+matrix_depth1_size65536_local.csv 5746
+matrix_depth1_size65536_remote.csv 5982
+matrix_depth1_size65536_runtime-only.csv 7158
+matrix_depth1_size65536_static-only.csv 6563
+placement_calibration_recommendations.json 1375
+placement_latency_model.json 1024
+placement_matrix_latency_summary.csv 8131
+placement_matrix_oracle_metrics.csv 11833
+placement_variants.json 2497
