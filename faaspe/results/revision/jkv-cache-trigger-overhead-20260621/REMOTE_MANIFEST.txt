@@ -1,0 +1,29 @@
+Remote complete result directory:
+/users/jinwei/projects/Project-FAASPE/faaspe/results/revision/jkv-cache-trigger-overhead-20260621
+
+Measurement command:
+cd /users/jinwei/projects/Project-FAASPE/faaspe && python3 scripts/run_placement_matrix_direct.py --output-dir revision/jkv-cache-trigger-overhead-20260621 --samples 1000 --depths 1 --object-sizes 1024,1048576 --key-count 1 --inject-calibrated-model --variants arbiter-only
+
+Why arbiter-only:
+The arbiter-only variant enables JKV_OBJECT_SIZE_TRIGGER_ENABLED=1 and disables profiler/fallback. This isolates the cache object-size trigger path without profiler exploration changing placement.
+
+Remote raw files:
+cache_arbiter-only.log
+matrix_depth1_size1024_arbiter-only.csv
+matrix_depth1_size1048576_arbiter-only.csv
+placement_matrix_latency_summary.csv
+placement_matrix_oracle_metrics.csv
+placement_variants.json
+placement_latency_model.json
+placement_calibration_recommendations.json
+
+Build/log notes:
+- jkv/src/cache/cache.cpp was instrumented with an object-size trigger overhead timer.
+- During measurement, the overhead line was temporarily changed to spdlog::info so Release build emitted it.
+- After measurement, the overhead log was changed back to spdlog::debug and JKV was rebuilt on CloudLab.
+- Local source also keeps the overhead log at debug level.
+
+Observed overhead summary:
+decision,object_size,count,min_us,median_us,p95_us,mean_us,max_us
+skipped,1024,1000,0,1,3,1.816,4
+triggered,1048576,1000,61,121,131,110.781,218

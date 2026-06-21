@@ -1,0 +1,3 @@
+variant,depth,object_size,decision,count,min_us,median_us,p95_us,mean_us,max_us,benchmark_median_ms,native_count,func_count
+arbiter-only,1,1024,skipped,1000,0,1,3,1.816,4,0.23674964904785156,1000,0
+arbiter-only,1,1048576,triggered,1000,61,121,131,110.781,218,0.8730888366699219,0,1000
