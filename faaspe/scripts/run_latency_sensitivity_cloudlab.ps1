@@ -59,7 +59,7 @@ variant_meta = {
     "faaspe-cache125": {"cache_latency_scale": "1.25", "trigger_threshold_bytes": ""},
     "faaspe-trigger64k": {"cache_latency_scale": "1.0", "trigger_threshold_bytes": "65536"},
     "faaspe-trigger100k": {"cache_latency_scale": "1.0", "trigger_threshold_bytes": "102400"},
-    "faaspe-trigger256k": {"cache_latency_scale": "1.0", "trigger_threshold_bytes": "262144"},
+    "faaspe-trigger256k": {"cache_latency_scale": "1.0", "trigger_threshold_bytes": "262145"},
 }
 
 for sweep, prefix, repeats in cases:
