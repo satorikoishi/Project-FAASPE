@@ -66,6 +66,45 @@
       "JKV_OBJECT_SIZE_TRIGGER_FUNC_NAME": "NONE"
     }
   },
+  "faaspe-trigger64k": {
+    "strategy": "faaspe",
+    "label": "faaspe-trigger64k",
+    "function_env": {
+      "FAASPE_PROFILER_EXPLORE_ON_UNKNOWN": "1",
+      "FAASPE_CACHE_LATENCY_SCALE": "1.0"
+    },
+    "cache_env": {
+      "JKV_OBJECT_SIZE_TRIGGER_ENABLED": "1",
+      "JKV_OBJECT_SIZE_TRIGGER_THRESHOLD_BYTES": "65536",
+      "JKV_OBJECT_SIZE_TRIGGER_FUNC_NAME": "NONE"
+    }
+  },
+  "faaspe-trigger100k": {
+    "strategy": "faaspe",
+    "label": "faaspe-trigger100k",
+    "function_env": {
+      "FAASPE_PROFILER_EXPLORE_ON_UNKNOWN": "1",
+      "FAASPE_CACHE_LATENCY_SCALE": "1.0"
+    },
+    "cache_env": {
+      "JKV_OBJECT_SIZE_TRIGGER_ENABLED": "1",
+      "JKV_OBJECT_SIZE_TRIGGER_THRESHOLD_BYTES": "102400",
+      "JKV_OBJECT_SIZE_TRIGGER_FUNC_NAME": "NONE"
+    }
+  },
+  "faaspe-trigger256k": {
+    "strategy": "faaspe",
+    "label": "faaspe-trigger256k",
+    "function_env": {
+      "FAASPE_PROFILER_EXPLORE_ON_UNKNOWN": "1",
+      "FAASPE_CACHE_LATENCY_SCALE": "1.0"
+    },
+    "cache_env": {
+      "JKV_OBJECT_SIZE_TRIGGER_ENABLED": "1",
+      "JKV_OBJECT_SIZE_TRIGGER_THRESHOLD_BYTES": "262144",
+      "JKV_OBJECT_SIZE_TRIGGER_FUNC_NAME": "NONE"
+    }
+  },
   "static-only": {
     "strategy": "faaspe",
     "label": "static-only",
