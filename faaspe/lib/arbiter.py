@@ -94,6 +94,7 @@ class PlacementLatencyModel:
         storage_base_latency_us=900.0,
     ):
         self.linear_start_depth = int(linear_start_depth)
+        self.cache_latency_scale = float(os.getenv("FAASPE_CACHE_LATENCY_SCALE", "1.0"))
         self.small_depth_cache_latency_us = {
             int(depth): float(latency)
             for depth, latency in (small_depth_cache_latency_us or {}).items()
@@ -155,8 +156,8 @@ class PlacementLatencyModel:
         ):
             small_latency = self.small_depth_cache_latency_us.get(depth_key)
             if small_latency is not None:
-                return small_latency
-        return depth * self.cache_object_latency_us(object_size)
+                return small_latency * self.cache_latency_scale
+        return depth * self.cache_object_latency_us(object_size) * self.cache_latency_scale
 
     def storage_latency_us(self, storage_load_us=0.0):
         return self.storage_base_latency_us + float(storage_load_us or 0.0)

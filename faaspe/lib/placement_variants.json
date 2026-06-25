@@ -27,6 +27,45 @@
       "JKV_OBJECT_SIZE_TRIGGER_FUNC_NAME": "NONE"
     }
   },
+  "faaspe-cache075": {
+    "strategy": "faaspe",
+    "label": "faaspe-cache075",
+    "function_env": {
+      "FAASPE_PROFILER_EXPLORE_ON_UNKNOWN": "1",
+      "FAASPE_CACHE_LATENCY_SCALE": "0.75"
+    },
+    "cache_env": {
+      "JKV_OBJECT_SIZE_TRIGGER_ENABLED": "1",
+      "JKV_OBJECT_SIZE_TRIGGER_THRESHOLD_BYTES": "102400",
+      "JKV_OBJECT_SIZE_TRIGGER_FUNC_NAME": "NONE"
+    }
+  },
+  "faaspe-cache100": {
+    "strategy": "faaspe",
+    "label": "faaspe-cache100",
+    "function_env": {
+      "FAASPE_PROFILER_EXPLORE_ON_UNKNOWN": "1",
+      "FAASPE_CACHE_LATENCY_SCALE": "1.0"
+    },
+    "cache_env": {
+      "JKV_OBJECT_SIZE_TRIGGER_ENABLED": "1",
+      "JKV_OBJECT_SIZE_TRIGGER_THRESHOLD_BYTES": "102400",
+      "JKV_OBJECT_SIZE_TRIGGER_FUNC_NAME": "NONE"
+    }
+  },
+  "faaspe-cache125": {
+    "strategy": "faaspe",
+    "label": "faaspe-cache125",
+    "function_env": {
+      "FAASPE_PROFILER_EXPLORE_ON_UNKNOWN": "1",
+      "FAASPE_CACHE_LATENCY_SCALE": "1.25"
+    },
+    "cache_env": {
+      "JKV_OBJECT_SIZE_TRIGGER_ENABLED": "1",
+      "JKV_OBJECT_SIZE_TRIGGER_THRESHOLD_BYTES": "102400",
+      "JKV_OBJECT_SIZE_TRIGGER_FUNC_NAME": "NONE"
+    }
+  },
   "static-only": {
     "strategy": "faaspe",
     "label": "static-only",
